@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RankAI Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/dashboard.css">
+  </head>
+  <body class="dashboard-body">
+    <div class="dashboard-shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <span class="brand-icon">RA</span>
+          <div>
+            <strong>RankAI</strong>
+            <small>GPT-5 monitor</small>
+          </div>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-link active" data-scroll="section-overview">Overview</button>
+          <button class="sidebar-link" data-scroll="section-analysis">Run analysis</button>
+          <button class="sidebar-link" data-scroll="section-history">History</button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="sidebar-new-analysis" class="secondary">New analysis</button>
+          <button id="sidebar-logout" class="ghost">Log out</button>
+        </div>
+      </aside>
+
+      <main class="dashboard-main">
+        <header class="dashboard-header" id="section-overview">
+          <div>
+            <h1>Visibility dashboard</h1>
+            <p id="welcome-copy">Monitoring your brand performance in ChatGPT.</p>
+          </div>
+          <div class="header-actions">
+            <span id="subscription-pill" class="plan-pill">Free plan</span>
+            <button id="upgrade-btn" class="primary">Upgrade to Pro</button>
+          </div>
+        </header>
+
+        <section class="metrics-grid" aria-label="Key metrics">
+          <article class="metric-card">
+            <span class="metric-label">Brand mentions</span>
+            <strong id="metric-mentions">--</strong>
+            <small id="metric-mentions-desc">Run an analysis to populate metrics.</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Share of voice</span>
+            <strong id="metric-share">--</strong>
+            <small id="metric-share-desc">Compared to tracked competitors.</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Gap prompts</span>
+            <strong id="metric-gaps">--</strong>
+            <small id="metric-gaps-desc">Prompts where competitors surface without you.</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Prompt coverage</span>
+            <strong id="metric-prompts">--</strong>
+            <small id="metric-prompts-desc">Insights generated across GPT-5 prompts.</small>
+          </article>
+        </section>
+
+        <section class="panel-grid" id="section-analysis">
+          <article class="panel-card" id="analysis-form-card">
+            <div class="panel-header">
+              <h2>Run new analysis</h2>
+              <span id="plan-hint">Free plan: 1 analysis every 30 days, 3 competitors.</span>
+            </div>
+            <form id="analysis-form" class="analysis-form">
+              <label>Brand name
+                <input type="text" name="brand" placeholder="Your brand" required>
+              </label>
+              <label>Industry (optional)
+                <input type="text" name="industry" placeholder="SaaS or E-commerce">
+              </label>
+              <label>Keywords (comma separated, up to 5)
+                <input type="text" name="keywords" placeholder="ai tools, chatbot" required>
+              </label>
+              <label>Competitors (comma separated)
+                <input type="text" name="competitors" placeholder="Competitor A, Competitor B">
+              </label>
+              <button type="submit" class="primary">Run analysis</button>
+            </form>
+          </article>
+
+          <article class="panel-card" id="analysis-overview-card">
+            <div class="panel-header">
+              <h2 id="analysis-brand">No analyses yet</h2>
+              <span id="analysis-date"></span>
+            </div>
+            <p id="analysis-summary">Run your first analysis to see visibility insights.</p>
+            <div class="overview-stats" id="analysis-stats"></div>
+            <div class="overview-actions">
+              <button id="download-report" class="secondary" disabled>Download PDF report</button>
+              <span id="gated-hint" class="hint">Upgrade to download full reports.</span>
+            </div>
+            <div id="empty-state" class="empty-state">No data yet. Run an analysis to populate this dashboard.</div>
+          </article>
+        </section>
+
+        <section class="split-panels">
+          <article class="panel-card" id="leaderboard-card">
+            <div class="panel-header">
+              <h3>Competitor leaderboard</h3>
+              <span id="leaderboard-hint"></span>
+            </div>
+            <div id="leaderboard-body" class="leaderboard-table"></div>
+          </article>
+          <article class="panel-card" id="gaps-card">
+            <div class="panel-header">
+              <h3>Gap prompts</h3>
+              <span id="gaps-hint"></span>
+            </div>
+            <ul id="gaps-list" class="gap-list"></ul>
+          </article>
+        </section>
+
+        <section class="panel-card prompt-panel">
+          <div class="panel-header">
+            <h3>Prompt insights</h3>
+            <span id="prompt-hint">Top GPT-5 prompts driving visibility.</span>
+          </div>
+          <ul id="prompt-list" class="prompt-list"></ul>
+        </section>
+
+        <section class="panel-card history-panel" id="section-history">
+          <div class="panel-header">
+            <h3>Analysis history</h3>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/dashboard.js"></script>
+  </body>
+</html>

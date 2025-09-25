@@ -1,0 +1,16 @@
+{
+  "name": "rankai",
+  "version": "0.1.0",
+  "description": "RankAI MVP backend and frontend server",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node src/scripts/seed.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.3",
+    "dotenv": "^16.4.5",
+    "pino": "^9.1.0"
+  }
+}

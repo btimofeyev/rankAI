@@ -1,181 +1,147 @@
-RankAI MVP – ChatGPT Focused PRD (2025)
-MVP Scope (4-Week Build)
+RankAI – MVP PRD (AI Search Tracking)
+1. MVP Scope (4 Weeks)
 
-Build the minimal viable version of RankAI focused exclusively on AI citation tracking in ChatGPT (GPT-5) and simple competitor benchmarking.
+Deliver a minimal product that tracks a brand’s visibility in AI search (ChatGPT/GPT-5) over time and compares it with competitors.
 
-MVP Features
-1. AI Citation Engine (Core)
+2. Core Features
+1. Brand Visibility Tracking
 
 Input: Company name + up to 5 keywords.
 
-Process: Query GPT-5 with 20 pre-defined prompts.
+Process: GPT-5 runs ~20 pre-defined industry queries (e.g. “best AI tutor,” “top educational apps 2025”).
 
-Output:
+Metrics Captured:
 
-Mention frequency.
+Mention frequency (how many times the brand appears).
 
-Position (first vs buried mentions).
+Position (ranked first vs buried in the answer).
 
-Competitor comparison (side-by-side).
+Sentiment/context (positive/neutral).
 
-Data: Stored in Supabase, refresh weekly.
+2. Competitor Benchmarking
 
-2. Simple Dashboard
+User adds 3–5 competitor brands.
 
-Landing Page: Free “ChatGPT Visibility Checker.”
+Dashboard shows:
 
-Results Page: Show brand mentions vs 3 competitors.
+Share of AI Voice (what % of mentions go to each brand).
 
-Auth: Basic email signup/login (Supabase).
+Side-by-side frequency + position.
 
-Export: PDF report summarizing mentions + competitor stats.
+Gap queries (competitors mentioned, but not you).
 
-3. Competitor Analysis
+3. Historical Tracking
 
-Manual input (MVP): User enters competitor names.
+Weekly refreshes.
 
-Comparison View: Frequency + relative positions.
+Trendline graph: “Mentions over time.”
 
-Gap Analysis: Queries where competitors are mentioned, but the brand isn’t.
+Alerts when competitor gains/losses happen.
 
-4. Basic Billing
+4. Dashboard (Actionable, Not Reports)
 
-Free: 1 analysis/month (limited report).
+Summary Card: “Klio AI mentioned in 3/20 queries (15%), Competitor A: 12/20 (60%).”
 
-Pro ($89/month): Weekly refresh, 5 competitors, PDF exports.
+Trend Card: Mentions up +2 since last week.
 
-Stripe Integration: Checkout + subscription.
+Gap Card: Queries you’re missing.
 
-Technical Implementation
-Backend Structure
-/root/rankai/
-├── src/
-│   ├── server.js
-│   ├── controllers/
-│   │   ├── analysis.js   # GPT-5 queries
-│   │   ├── auth.js       # User authentication
-│   │   └── billing.js    # Stripe integration
-│   ├── services/
-│   │   ├── gptQuery.js   # GPT-5 query logic
-│   │   ├── competitor.js # Competitor comparison
-│   │   └── report.js     # PDF generation
-│   └── utils/
-│       ├── parser.js     # Mention detection + fuzzy matching
-│       └── database.js   # Supabase queries
-├── frontend/             # React dashboard
-├── public/               # Landing page assets
-└── package.json
+Action Card: “Competitors dominate on ‘best AI tutor for kids’ → add content targeting that phrase.”
 
-Database Schema (Supabase)
--- Users
-users (id, email, created_at, subscription_tier, stripe_customer_id)
+5. Billing (MVP)
 
--- Analyses
-analyses (id, user_id, brand_name, industry, created_at, results_json)
+Free Tier: 1 analysis/month, limited competitor view.
 
--- Queries
-queries (id, analysis_id, query_text, response_text, mentions_found, positions, sentiment)
+Pro ($89/mo): Weekly tracking, up to 5 competitors, trends & alerts.
 
--- Competitors
-competitors (id, analysis_id, competitor_name, mention_count, avg_position)
+Stripe subscription checkout.
 
-AI Integration
+3. Technical Implementation
+Backend
 
-Model: GPT-5 (OpenAI API).
+Node.js + Express.
 
-Query Templates (20): “best [industry] tools 2025,” “top [industry] platforms,” etc.
+Services:
 
-Cost Control: Batch queries in a single request, cache results for 24–48h.
+gptQuery.js → runs GPT-5 queries.
 
-Estimated Cost: <$0.50 per full analysis.
+parser.js → detects mentions + positions.
 
-Frontend (Minimal React)
+insights.js → calculates share of AI voice, gaps, trends.
 
-Landing Page: Hero + free checker.
+billing.js → Stripe subscriptions.
 
-Dashboard: Table showing mentions + competitor stats.
+Database (Supabase):
 
-Report View: Export to PDF.
+users → auth + plan.
+
+analyses → brand + competitors.
+
+queries → query text, response, mentions, positions.
+
+history → weekly snapshots for trendlines.
+
+Frontend (React)
+
+Landing Page: Free “AI Search Visibility Checker.”
+
+Dashboard: 4 cards → Summary, Trends, Gaps, Actions.
 
 Auth: Basic login/signup.
 
-User Flow
-Free User
+4. User Flow
 
-Land on rankai.com.
+Free User:
 
-Enter company + keywords.
+Enter brand + keywords.
 
-Wait 1–2 minutes for analysis.
+Get basic snapshot (brand vs 1 competitor).
 
-See partial results (“Your brand: 0 mentions, Competitor A: 6 mentions”).
+CTA → upgrade for trends + full competitor view.
 
-CTA → signup for full competitor report.
-
-Paid User
+Pro User:
 
 Subscribe via Stripe.
 
-Enter brand + up to 5 competitors.
+Add brand + 3–5 competitors.
 
-Weekly digest email + dashboard updates.
+Get weekly refresh + trendline dashboard.
 
-Export branded PDF reports.
+Receive alerts (weekly digest email).
 
-Success Metrics
+5. Success Metrics
 
-Week 1–2 (Tech Validation):
+Week 1–2:
 
-GPT-5 queries work reliably.
-
-Mention parsing ≥95% accurate.
+Mentions parsed ≥95% accuracy.
 
 Dashboard loads <3s.
 
-PDF export functional.
-
-Week 3–4 (Market Validation):
+Week 3–4:
 
 100+ free analyses run.
 
-10% conversion to signup.
+≥5 paying users ($445+ MRR).
 
-≥5 paying customers ($445+ MRR).
+First trendline data captured (weekly).
 
 Month 2 Goals:
 
-20 paying customers ($1,780 MRR).
+20 paying users ($1,780+ MRR).
 
 500+ free analyses.
 
-≥15% email → paid conversion.
+Customers engaging with trendline + gap cards.
 
-Development Timeline
+6. Dev Timeline
 
 Week 1: GPT-5 integration + Supabase schema + parsing.
 
-Week 2: Landing page, dashboard, auth, Stripe.
+Week 2: Dashboard + auth + Stripe.
 
-Week 3: PDF export, email digest, performance polish.
+Week 3: Trendline + gap detection + insights.
 
-Week 4: Deploy domain, monitoring/logging, beta test.
+Week 4: Deployment, beta test, monitoring.
 
-Resource Requirements
-
-Server: DigitalOcean droplet.
-
-Domain: rankai.com.
-
-API: GPT-5 (~$200/month).
-
-Database: Supabase.
-
-Dev Time: ~130 hours (4 weeks).
-
-Launch Strategy
-
-Soft Launch (Week 1 post-build): 10 beta users.
-
-Public Launch (Week 2): Product Hunt + LinkedIn demo.
-
-Growth (Week 3–4): SEO blog, free checker promotion, outreach to SaaS/E-com.
+📌 This shifts RankAI from a static audit tool → into a “tracking dashboard” that brands and marketers will log into weekly.
+That stickiness = better retention + recurring revenue.

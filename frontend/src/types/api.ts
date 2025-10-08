@@ -9,6 +9,7 @@ export type GapOpportunity = {
 export type TrendPoint = {
   week: string;
   value: number;
+  [brand: string]: string | number;
 };
 
 export type DashboardCards = {
@@ -24,6 +25,11 @@ export type DashboardCards = {
   };
   gapCard: GapOpportunity[];
   actionCard: string[];
+  sentimentCard: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
 };
 
 export type AnalysisRecord = {
@@ -61,8 +67,29 @@ export type Project = {
   brandName: string;
   keywords: string[];
   competitors: string[];
+  trackedQueries: string[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type QueryPerformance = {
+  query: string;
+  totalAppearances: number;
+  brandAppearances: number;
+  appearanceRate: number;
+  avgPosition: number;
+  bestPosition: number;
+  worstPosition: number;
+  sentiment: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  competitorData: Record<string, {
+    appearances: number;
+    avgPosition: number;
+  }>;
+  isTracked: boolean;
 };
 
 export type AnalysisRun = {

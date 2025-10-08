@@ -9,7 +9,8 @@ import {
   ProjectResponse,
   CreateProjectPayload,
   UpdateProjectPayload,
-  RunAnalysisResponse
+  RunAnalysisResponse,
+  QueryPerformance
 } from '../types/api.ts';
 
 const baseURL = import.meta.env.VITE_API_BASE ?? '/api';
@@ -71,5 +72,23 @@ export const deleteProject = async (token: string, projectId: string): Promise<v
 
 export const runProjectAnalysis = async (token: string, projectId: string): Promise<RunAnalysisResponse> => {
   const { data } = await client.post<RunAnalysisResponse>(`/projects/${projectId}/analyze`, {}, { headers: authHeaders(token) });
+  return data;
+};
+
+export const fetchQueryPerformance = async (token: string, projectId: string): Promise<{ performance: QueryPerformance[] }> => {
+  const { data } = await client.get<{ performance: QueryPerformance[] }>(`/projects/${projectId}/query-performance`, { headers: authHeaders(token) });
+  return data;
+};
+
+export const trackQuery = async (token: string, projectId: string, query: string): Promise<{ project: Project }> => {
+  const { data } = await client.post<{ project: Project }>(`/projects/${projectId}/tracked-queries`, { query }, { headers: authHeaders(token) });
+  return data;
+};
+
+export const untrackQuery = async (token: string, projectId: string, query: string): Promise<{ project: Project }> => {
+  const { data } = await client.delete<{ project: Project }>(`/projects/${projectId}/tracked-queries`, {
+    headers: authHeaders(token),
+    data: { query }
+  });
   return data;
 };

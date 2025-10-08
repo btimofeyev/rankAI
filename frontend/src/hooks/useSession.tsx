@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient.ts';
 
@@ -26,6 +27,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [plan, setPlanState] = useState<PlanTier>(getInitialPlan);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const syncSession = async () => {
@@ -58,9 +60,10 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     setPlan,
     signOut: async () => {
       await supabase.auth.signOut();
+      queryClient.clear();
       setPlan('free');
     }
-  }), [session, loading, plan, setPlan]);
+  }), [session, loading, plan, setPlan, queryClient]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 };

@@ -28,9 +28,13 @@ export type AnalysisRecord = AnalysisRequest & {
 export type TrendSnapshot = {
   id: string;
   analysisId: string;
-  week: string;
+  snapshotDate: string;
+  totalQueries: number;
+  queriesWithMentions: number;
   brandMentions: number;
-  competitorMentions: Record<string, number>;
+  brandSharePct: number;
+  competitorShares: Record<string, number>;
+  analyzedQueries: string[];
 };
 
 export type GapOpportunity = {
@@ -53,6 +57,11 @@ export type DashboardSummary = {
   };
   gapCard: GapOpportunity[];
   actionCard: string[];
+  sentimentCard: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
 };
 
 export type PlanTier = 'free' | 'pro';
@@ -69,6 +78,7 @@ export type BrandProject = {
   brandName: string;
   keywords: string[];
   competitors: string[];
+  trackedQueries: string[];
   createdAt: string;
   updatedAt: string;
 };

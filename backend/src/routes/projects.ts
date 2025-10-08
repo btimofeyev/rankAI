@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 import { repository } from '../services/repository.js';
 import { runBrandVisibilityAnalysis } from '../services/gptQuery.js';
 import { buildDashboardSummary } from '../services/insights.js';
+import { calculateQueryPerformance } from '../services/queryAnalytics.js';
 import { logger } from '../utils/logger.js';
 
 export const projectsRouter = Router();
@@ -61,6 +62,7 @@ projectsRouter.get('/:projectId', authenticate, async (req, res, next) => {
     // Get all runs, cumulative results, and snapshots
     const runs = await repository.getProjectRuns(projectId);
     const allResults = await repository.getAllProjectResults(projectId);
+    const allQueries = await repository.getAllProjectQueries(projectId);
     const snapshots = await repository.getProjectSnapshots(projectId);
 
     // Debug logging for snapshot data
@@ -77,7 +79,7 @@ projectsRouter.get('/:projectId', authenticate, async (req, res, next) => {
 
     // Build dashboard summary from cumulative data
     const dashboard = allResults.length > 0
-      ? buildDashboardSummary(project.brandName, project.competitors, allResults, snapshots)
+      ? buildDashboardSummary(project.brandName, project.competitors, allResults, snapshots, allQueries)
       : null;
 
     // Calculate actual total queries from all runs
@@ -167,31 +169,49 @@ projectsRouter.post('/:projectId/analyze', authenticate, async (req, res, next) 
       }
     }
 
-    logger.info({ projectId, brand: project.brandName }, 'Starting analysis run');
+    logger.info({
+      projectId,
+      brand: project.brandName,
+      trackedQueriesCount: project.trackedQueries.length
+    }, 'Starting analysis run');
 
     // Run analysis - now returns QueryAnalysisResult[] with all queries
     const analysisResults = await runBrandVisibilityAnalysis(
       project.brandName,
       project.keywords,
-      project.competitors
+      project.competitors,
+      project.trackedQueries
     );
 
     // Calculate metrics for this run
     const totalQueries = analysisResults.length;
     const queriesWithMentions = analysisResults.filter(r => r.mentions.length > 0).length;
-    const allMentions = analysisResults.flatMap(r => r.mentions);
-    const brandMentions = allMentions.filter(m => m.brand === project.brandName).length;
 
-    // Calculate share of voice for this run
-    const mentionCounts = allMentions.reduce<Record<string, number>>((acc, m) => {
-      acc[m.brand] = (acc[m.brand] ?? 0) + 1;
+    // Count unique queries each brand appears in (not total mentions)
+    const brandQueriesAppearedIn = new Set(
+      analysisResults
+        .filter(r => r.mentions.some(m => m.brand === project.brandName))
+        .map(r => r.query)
+    ).size;
+
+    // Calculate share of voice based on query appearances
+    const brandSharePct = totalQueries === 0 ? 0 : Math.round((brandQueriesAppearedIn / totalQueries) * 100);
+
+    // Count query appearances for each competitor
+    const competitorQueryAppearances = project.competitors.reduce<Record<string, number>>((acc, comp) => {
+      const count = new Set(
+        analysisResults
+          .filter(r => r.mentions.some(m => m.brand === comp))
+          .map(r => r.query)
+      ).size;
+      acc[comp] = count;
       return acc;
     }, {});
-    const totalMentionCount = Object.values(mentionCounts).reduce((sum, c) => sum + c, 0);
-    const brandSharePct = totalMentionCount === 0 ? 0 : Math.round((brandMentions / totalMentionCount) * 100);
+
+    // Calculate competitor share percentages
     const competitorShares = project.competitors.reduce<Record<string, number>>((acc, comp) => {
-      const count = mentionCounts[comp] ?? 0;
-      acc[comp] = totalMentionCount === 0 ? 0 : Math.round((count / totalMentionCount) * 100);
+      const count = competitorQueryAppearances[comp] ?? 0;
+      acc[comp] = totalQueries === 0 ? 0 : Math.round((count / totalQueries) * 100);
       return acc;
     }, {});
 
@@ -201,13 +221,13 @@ projectsRouter.post('/:projectId/analyze', authenticate, async (req, res, next) 
     // Save query results (including queries without mentions)
     await repository.saveQueryResults(run.id, analysisResults);
 
-    // Create snapshot for trend tracking
+    // Create snapshot for trend tracking (brandMentions now stores query appearances)
     await repository.createSnapshot(
       projectId,
       run.id,
       totalQueries,
       queriesWithMentions,
-      brandMentions,
+      brandQueriesAppearedIn,  // Store query appearances instead of mention count
       brandSharePct,
       competitorShares
     );
@@ -217,14 +237,14 @@ projectsRouter.post('/:projectId/analyze', authenticate, async (req, res, next) 
       runId: run.id,
       totalQueries,
       queriesWithMentions,
-      mentionsCount: allMentions.length,
-      brandMentions
+      brandQueriesAppearedIn
     }, 'Analysis run complete');
 
     // Get updated cumulative data
     const allResults = await repository.getAllProjectResults(projectId);
+    const allQueries = await repository.getAllProjectQueries(projectId);
     const snapshots = await repository.getProjectSnapshots(projectId);
-    const dashboard = buildDashboardSummary(project.brandName, project.competitors, allResults, snapshots);
+    const dashboard = buildDashboardSummary(project.brandName, project.competitors, allResults, snapshots, allQueries);
 
     // Calculate total queries across all runs
     const totalQueriesAllRuns = snapshots.reduce((sum, s) => sum + s.totalQueries, 0);
@@ -254,6 +274,116 @@ projectsRouter.get('/:projectId/runs', authenticate, async (req, res, next) => {
 
     const runs = await repository.getProjectRuns(projectId);
     res.json({ runs });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get detailed query results for project (for drill-down view)
+projectsRouter.get('/:projectId/queries', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    // Get all results with full details
+    const runs = await repository.getProjectRuns(projectId);
+    const queryDetails = [];
+
+    for (const run of runs) {
+      const results = await repository.getRunResults(run.id);
+      queryDetails.push(...results.map(qr => ({
+        ...qr,
+        runId: run.id,
+        runDate: run.runAt
+      })));
+    }
+
+    res.json({ queries: queryDetails });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add tracked query
+projectsRouter.post('/:projectId/tracked-queries', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+    const { query } = req.body ?? {};
+
+    if (!query || typeof query !== 'string') {
+      throw new createHttpError.BadRequest('query string required');
+    }
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    const updatedProject = await repository.addTrackedQuery(projectId, query);
+    logger.info({ projectId, query, totalTracked: updatedProject.trackedQueries.length }, 'Query tracked');
+    res.json({ project: updatedProject });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Remove tracked query
+projectsRouter.delete('/:projectId/tracked-queries', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+    const { query } = req.body ?? {};
+
+    if (!query || typeof query !== 'string') {
+      throw new createHttpError.BadRequest('query string required');
+    }
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    const updatedProject = await repository.removeTrackedQuery(projectId, query);
+    logger.info({ projectId, query, totalTracked: updatedProject.trackedQueries.length }, 'Query untracked');
+    res.json({ project: updatedProject });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get query performance analytics
+projectsRouter.get('/:projectId/query-performance', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    const performance = await calculateQueryPerformance(
+      projectId,
+      project.brandName,
+      project.competitors,
+      project.trackedQueries
+    );
+
+    res.json({ performance });
   } catch (error) {
     next(error);
   }

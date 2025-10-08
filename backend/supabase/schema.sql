@@ -28,8 +28,13 @@ create table if not exists public.history (
   id uuid primary key,
   analysis_id uuid references public.analyses (id) on delete cascade,
   week date not null,
+  snapshot_date timestamp with time zone not null default now(),
+  total_queries int not null default 0,
+  queries_with_mentions int not null default 0,
   brand_mentions int not null,
-  competitor_mentions jsonb not null
+  brand_share_pct int not null default 0,
+  competitor_shares jsonb not null default '{}'::jsonb,
+  analyzed_queries text[] not null default array[]::text[]
 );
 
 create index if not exists idx_queries_analysis on public.queries (analysis_id);

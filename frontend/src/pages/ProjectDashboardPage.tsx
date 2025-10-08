@@ -2,14 +2,17 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../hooks/useSession.tsx';
-import { fetchProject, runProjectAnalysis, updateProject, deleteProject } from '../api/index.ts';
+import { fetchProject, runProjectAnalysis, updateProject, deleteProject, fetchQueryPerformance, trackQuery, untrackQuery } from '../api/index.ts';
 import Layout from '../components/Layout.tsx';
 import PlanBadge from '../components/PlanBadge.tsx';
 import MetricCard from '../components/MetricCard.tsx';
 import TrendChart from '../components/TrendChart.tsx';
+import ComparisonChart from '../components/ComparisonChart.tsx';
 import ShareOfVoiceList from '../components/ShareOfVoiceList.tsx';
 import GapList from '../components/GapList.tsx';
 import ActionList from '../components/ActionList.tsx';
+import SentimentChart from '../components/SentimentChart.tsx';
+import TopQueriesCard from '../components/TopQueriesCard.tsx';
 
 const ProjectDashboardPage = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -29,13 +32,36 @@ const ProjectDashboardPage = () => {
     enabled: Boolean(token && projectId)
   });
 
+  const performanceQuery = useQuery({
+    queryKey: ['query-performance', projectId],
+    queryFn: () => fetchQueryPerformance(token ?? '', projectId ?? ''),
+    enabled: Boolean(token && projectId)
+  });
+
   const runAnalysisMutation = useMutation({
     mutationFn: () => runProjectAnalysis(token ?? '', projectId ?? ''),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['query-performance', projectId] });
     },
     onError: (err: Error) => {
       setError(err.message || 'Failed to run analysis');
+    }
+  });
+
+  const trackMutation = useMutation({
+    mutationFn: (query: string) => trackQuery(token ?? '', projectId ?? '', query),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['query-performance', projectId] });
+    }
+  });
+
+  const untrackMutation = useMutation({
+    mutationFn: (query: string) => untrackQuery(token ?? '', projectId ?? '', query),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['query-performance', projectId] });
     }
   });
 
@@ -254,8 +280,58 @@ const ProjectDashboardPage = () => {
           </div>
 
           <div style={sideCardStyle}>
+            <h3 style={{ margin: '0 0 12px 0' }}>Tracked Queries</h3>
+            {project.trackedQueries.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                {project.trackedQueries.map((query) => (
+                  <div
+                    key={query}
+                    style={{
+                      padding: '8px',
+                      borderRadius: '6px',
+                      background: 'rgba(91, 140, 254, 0.08)',
+                      border: '1px solid rgba(91, 140, 254, 0.2)',
+                      fontSize: '12px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ flex: 1, lineHeight: 1.3 }}>
+                      📌 {query.length > 50 ? query.substring(0, 50) + '...' : query}
+                    </div>
+                    <button
+                      onClick={() => untrackMutation.mutate(query)}
+                      disabled={untrackMutation.isPending}
+                      style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        border: 'none',
+                        background: 'rgba(255,107,107,0.2)',
+                        color: 'var(--danger)',
+                        cursor: 'pointer',
+                        fontSize: '10px'
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '12px', opacity: 0.6, marginBottom: '12px' }}>
+                No tracked queries yet. Track high-performing queries to monitor them consistently.
+              </div>
+            )}
+            <div style={{ fontSize: '11px', opacity: 0.5 }}>
+              {project.trackedQueries.length}/10 tracked
+            </div>
+          </div>
+
+          <div style={sideCardStyle}>
             <h3 style={{ margin: '0 0 12px 0' }}>Analysis History</h3>
-            <div style={{ fontSize: '13px', opacity: 0.7 }}>
+            <div style={{ fontSize: '13px', opacity: 0.7, marginBottom: '12px' }}>
               <div>Total Runs: {runs.length}</div>
               <div>Total Queries: {totalQueries}</div>
               {runs.length > 0 && (
@@ -264,6 +340,23 @@ const ProjectDashboardPage = () => {
                 </div>
               )}
             </div>
+            {runs.length > 0 && (
+              <button
+                onClick={() => navigate(`/projects/${projectId}/queries`)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'transparent',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                View All Queries →
+              </button>
+            )}
           </div>
 
           <div style={sideCardStyle}>
@@ -290,60 +383,166 @@ const ProjectDashboardPage = () => {
         {/* Main Dashboard */}
         <section>
           {dashboard ? (
-            <div style={{ display: 'grid', gap: '24px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-              <MetricCard title="Summary">
-                <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '8px' }}>
-                  {dashboard.summaryCard.brandMentions} mentions
-                  <span style={{ fontSize: '16px', opacity: 0.6, fontWeight: 400 }}> (cumulative)</span>
+            <>
+              {/* Key Metrics Row */}
+              <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '16px' }}>
+                <MetricCard title="Query Appearances">
+                  <div style={{ fontSize: '36px', fontWeight: 700, lineHeight: 1 }}>
+                    {dashboard.summaryCard.brandMentions}/{dashboard.summaryCard.totalQueries}
+                  </div>
+                  <div style={{ fontSize: '13px', opacity: 0.6, marginTop: '6px' }}>
+                    Appears in {dashboard.summaryCard.brandMentions} queries • {runs.length} runs
+                  </div>
+                </MetricCard>
+
+                <MetricCard title="Share of Voice">
+                  <div style={{ fontSize: '36px', fontWeight: 700, lineHeight: 1, color: 'var(--accent)' }}>
+                    {dashboard.summaryCard.shareOfVoice[project.brandName]}%
+                  </div>
+                  <div style={{ fontSize: '13px', opacity: 0.6, marginTop: '6px' }}>
+                    vs {Object.entries(dashboard.summaryCard.shareOfVoice)
+                      .filter(([name]) => name !== project.brandName)
+                      .map(([name, pct]) => `${name} ${pct}%`)
+                      .join(', ')}
+                  </div>
+                </MetricCard>
+
+                <MetricCard title="Trend">
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <div style={{ fontSize: '36px', fontWeight: 700, lineHeight: 1 }}>
+                      {dashboard.trendCard.series.at(-1)?.value ?? 0}
+                    </div>
+                    <span style={{
+                      color: dashboard.trendCard.delta >= 0 ? 'var(--success)' : 'var(--danger)',
+                      fontSize: '20px',
+                      fontWeight: 600
+                    }}>
+                      {dashboard.trendCard.delta >= 0 ? '▲' : '▼'}{Math.abs(dashboard.trendCard.delta)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '13px', opacity: 0.6, marginTop: '6px' }}>
+                    Queries in latest run • {dashboard.trendCard.series.length} data points
+                  </div>
+                </MetricCard>
+              </div>
+
+              {/* Charts Row */}
+              <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: '2fr 1fr', marginBottom: '16px' }}>
+                <div style={{
+                  background: 'var(--surface)',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '20px'
+                }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.6 }}>
+                    Visibility Over Time
+                  </h3>
+                  {dashboard.trendCard.series.length > 1 ? (
+                    <ComparisonChart
+                      data={dashboard.trendCard.series}
+                      brands={[project.brandName, ...project.competitors]}
+                    />
+                  ) : (
+                    <div style={{ opacity: 0.6, textAlign: 'center', padding: '40px' }}>
+                      Run more analyses to see trends
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: '14px', opacity: 0.7, marginBottom: '12px' }}>
-                  {dashboard.summaryCard.queriesWithMentions}/{dashboard.summaryCard.totalQueries} queries with mentions ({Math.round((dashboard.summaryCard.queriesWithMentions / dashboard.summaryCard.totalQueries) * 100)}%)
-                  <div style={{ fontSize: '12px', opacity: 0.5, marginTop: '4px' }}>
-                    Across all {runs.length} analysis run{runs.length !== 1 ? 's' : ''}
+
+                <div style={{
+                  background: 'var(--surface)',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '20px'
+                }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.6 }}>
+                    Sentiment
+                  </h3>
+                  <SentimentChart sentiment={dashboard.sentimentCard} />
+                </div>
+              </div>
+
+              {/* Top Queries Row */}
+              <div style={{ marginBottom: '16px' }}>
+                <TopQueriesCard
+                  performance={performanceQuery.data?.performance || []}
+                  onTrack={(query) => trackMutation.mutate(query)}
+                  onUntrack={(query) => untrackMutation.mutate(query)}
+                  loading={performanceQuery.isLoading}
+                />
+              </div>
+
+              {/* Insights Row */}
+              <div style={{ display: 'grid', gap: '16px', gridTemplateColumns: '1fr 1fr', marginBottom: '16px' }}>
+                <div style={{
+                  background: 'var(--surface)',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '20px'
+                }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.6 }}>
+                    Top Gaps
+                  </h3>
+                  {dashboard.gapCard.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {dashboard.gapCard.slice(0, 3).map((gap) => (
+                        <div
+                          key={gap.query}
+                          style={{
+                            padding: '12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.06)'
+                          }}
+                        >
+                          <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px', lineHeight: 1.3 }}>
+                            {gap.query.length > 80 ? gap.query.substring(0, 80) + '...' : gap.query}
+                          </div>
+                          <div style={{ fontSize: '12px', opacity: 0.6 }}>
+                            {gap.dominatingCompetitor === 'None' ? '🎯 Zero visibility' : `⚔️ ${gap.dominatingCompetitor} leads`}
+                          </div>
+                        </div>
+                      ))}
+                      {dashboard.gapCard.length > 3 && (
+                        <div style={{ fontSize: '12px', opacity: 0.6, textAlign: 'center' }}>
+                          +{dashboard.gapCard.length - 3} more gaps
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ opacity: 0.6, fontSize: '14px' }}>Strong coverage across all queries</div>
+                  )}
+                </div>
+
+                <div style={{
+                  background: 'var(--surface)',
+                  borderRadius: '16px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  padding: '20px'
+                }}>
+                  <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.6 }}>
+                    Recommended Actions
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {dashboard.actionCard.slice(0, 3).map((action, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: 'rgba(91, 140, 254, 0.08)',
+                          border: '1px solid rgba(91, 140, 254, 0.2)',
+                          fontSize: '13px',
+                          lineHeight: 1.4
+                        }}
+                      >
+                        {action}
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <ShareOfVoiceList share={dashboard.summaryCard.shareOfVoice} />
-                {runs.length > 0 && (
-                  <div style={{
-                    marginTop: '12px',
-                    paddingTop: '12px',
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
-                    fontSize: '13px',
-                    opacity: 0.7
-                  }}>
-                    Latest run: {new Date(runs[0].runAt).toLocaleDateString()}
-                    <br />
-                    {runs[0].queriesGenerated} queries analyzed
-                  </div>
-                )}
-              </MetricCard>
-
-              <MetricCard title="Trend">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div>
-                    <strong style={{ fontSize: '32px' }}>{dashboard.trendCard.series.at(-1)?.value ?? 0}</strong>
-                    <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '4px' }}>Latest run mentions</div>
-                  </div>
-                  <span style={{
-                    color: dashboard.trendCard.delta >= 0 ? 'var(--success)' : 'var(--danger)',
-                    fontSize: '18px',
-                    fontWeight: 600
-                  }}>
-                    {dashboard.trendCard.delta >= 0 ? '+' : ''}{dashboard.trendCard.delta}
-                    <div style={{ fontSize: '11px', opacity: 0.8, fontWeight: 400 }}>vs prev run</div>
-                  </span>
-                </div>
-                <TrendChart points={dashboard.trendCard.series} />
-              </MetricCard>
-
-              <MetricCard title="Gaps">
-                <GapList gaps={dashboard.gapCard} />
-              </MetricCard>
-
-              <MetricCard title="Actions">
-                <ActionList actions={dashboard.actionCard} />
-              </MetricCard>
-            </div>
+              </div>
+            </>
           ) : (
             <div style={{
               background: 'var(--surface)',

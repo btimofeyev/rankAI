@@ -5,18 +5,18 @@ import { logger } from '../utils/logger.js';
 
 const openai = env.openaiApiKey ? new OpenAI({ apiKey: env.openaiApiKey }) : null;
 
-const generateIndustryQueries = async (keywords: string[]): Promise<string[]> => {
+const generateIndustryQueries = async (keywords: string[], count: number): Promise<string[]> => {
   if (!openai) {
     logger.warn('OPENAI_API_KEY missing, returning default queries');
     return [
       'What are the best solutions in this space?',
       'Which tools are most popular?',
       'How do I choose the right platform?'
-    ];
+    ].slice(0, count);
   }
 
   const keywordString = keywords.join(', ');
-  const prompt = `Generate 20 diverse search queries that people ask when looking for solutions in the "${keywordString}" space. These should be natural questions someone would ask when researching tools/services, WITHOUT mentioning specific brand names. Focus on problems, comparisons, features, and recommendations. Return ONLY a JSON array of strings, no other text.`;
+  const prompt = `Generate ${count} diverse search queries that people ask when looking for solutions in the "${keywordString}" space. These should be natural questions someone would ask when researching tools/services, WITHOUT mentioning specific brand names. Focus on problems, comparisons, features, and recommendations. Return ONLY a JSON array of strings, no other text.`;
 
   try {
     const response = await openai.chat.completions.create({
@@ -37,7 +37,7 @@ const generateIndustryQueries = async (keywords: string[]): Promise<string[]> =>
 
     if (Array.isArray(queries) && queries.length > 0) {
       logger.info({ count: queries.length }, 'Generated industry queries');
-      return queries.slice(0, 20);
+      return queries.slice(0, count);
     }
 
     throw new Error('No valid queries in response');
@@ -47,7 +47,7 @@ const generateIndustryQueries = async (keywords: string[]): Promise<string[]> =>
       `What are the best ${keywordString} solutions?`,
       `Which ${keywordString} tool should I use?`,
       `How do I compare ${keywordString} platforms?`
-    ];
+    ].slice(0, count);
   }
 };
 
@@ -167,7 +167,8 @@ export type QueryAnalysisResult = {
 export const runBrandVisibilityAnalysis = async (
   brand: string,
   keywords: string[],
-  competitors: string[]
+  competitors: string[],
+  trackedQueries: string[] = []
 ): Promise<QueryAnalysisResult[]> => {
   if (!openai) {
     logger.warn('OPENAI_API_KEY missing, returning mock GPT data');
@@ -180,57 +181,92 @@ export const runBrandVisibilityAnalysis = async (
   }
 
   try {
-    // Step 1: Generate industry-relevant queries using GPT-5
-    logger.info({ keywords }, 'Generating industry queries');
-    const queries = await generateIndustryQueries(keywords);
-    logger.info({ count: queries.length }, 'Queries generated, starting analysis');
+    // Step 1: Combine tracked queries + generated queries
+    const TOTAL_QUERIES = 20;
+    const numTracked = Math.min(trackedQueries.length, 10); // Max 10 tracked queries
+    const numToGenerate = TOTAL_QUERIES - numTracked;
+
+    logger.info({
+      trackedCount: numTracked,
+      toGenerate: numToGenerate,
+      keywords
+    }, 'Preparing query set');
+
+    // Generate additional queries if needed
+    const generatedQueries = numToGenerate > 0
+      ? await generateIndustryQueries(keywords, numToGenerate)
+      : [];
+
+    // Combine: tracked first, then generated
+    const queries = [...trackedQueries.slice(0, numTracked), ...generatedQueries];
+
+    logger.info({
+      totalQueries: queries.length,
+      trackedQueries: numTracked,
+      generatedQueries: generatedQueries.length
+    }, 'Query set prepared, starting analysis');
 
     const brands = [brand, ...competitors];
     const results: QueryAnalysisResult[] = [];
 
-    // Step 2: Run each query through GPT-5 and analyze responses
-    for (const query of queries) {
-      try {
-        const response = await openai.chat.completions.create({
-          model: 'gpt-5',
-          reasoning_effort: 'low',
-          verbosity: 'medium',
-          messages: [
-            {
-              role: 'user',
-              content: query
-            }
-          ]
-        });
+    // Step 2: Run queries through GPT-5 in parallel batches
+    const BATCH_SIZE = 5; // Process 5 queries concurrently
+    const batches: string[][] = [];
+    for (let i = 0; i < queries.length; i += BATCH_SIZE) {
+      batches.push(queries.slice(i, i + BATCH_SIZE));
+    }
 
-        const responseText = response.choices[0]?.message?.content ?? '';
+    logger.info({ totalBatches: batches.length, batchSize: BATCH_SIZE }, 'Starting parallel query processing');
 
-        if (responseText) {
-          const mentions = analyzeResponseForMentions(query, responseText, brands);
-          results.push({
-            query,
-            responseText,
-            mentions
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      logger.info({ batchIndex: batchIndex + 1, batchQueries: batch.length }, 'Processing batch');
+
+      const batchPromises = batch.map(async (query) => {
+        try {
+          const response = await openai.chat.completions.create({
+            model: 'gpt-5',
+            reasoning_effort: 'low',
+            verbosity: 'medium',
+            messages: [
+              {
+                role: 'user',
+                content: query
+              }
+            ]
           });
-          logger.info({ query, mentionsFound: mentions.length, brands: mentions.map(m => m.brand) }, 'Query analyzed');
-        } else {
-          // Store query even with empty response
-          results.push({
+
+          const responseText = response.choices[0]?.message?.content ?? '';
+
+          if (responseText) {
+            const mentions = analyzeResponseForMentions(query, responseText, brands);
+            logger.info({ query, mentionsFound: mentions.length, brands: mentions.map(m => m.brand) }, 'Query analyzed');
+            return {
+              query,
+              responseText,
+              mentions
+            };
+          } else {
+            logger.info({ query }, 'Query analyzed - no response text');
+            return {
+              query,
+              responseText: '',
+              mentions: []
+            };
+          }
+        } catch (queryError) {
+          logger.error({ err: queryError, query }, 'Failed to analyze query');
+          return {
             query,
             responseText: '',
             mentions: []
-          });
-          logger.info({ query }, 'Query analyzed - no response text');
+          };
         }
-      } catch (queryError) {
-        logger.error({ err: queryError, query }, 'Failed to analyze query');
-        // Store failed query
-        results.push({
-          query,
-          responseText: '',
-          mentions: []
-        });
-      }
+      });
+
+      // Wait for all queries in this batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
     }
 
     const totalMentions = results.reduce((sum, r) => sum + r.mentions.length, 0);

@@ -166,9 +166,14 @@ export const repository = {
       const { error } = await supabase.client.from('history').insert({
         id: snapshot.id,
         analysis_id: snapshot.analysisId,
-        week: snapshot.week,
+        week: snapshot.snapshotDate.slice(0, 10),
+        snapshot_date: snapshot.snapshotDate,
+        total_queries: snapshot.totalQueries,
+        queries_with_mentions: snapshot.queriesWithMentions,
         brand_mentions: snapshot.brandMentions,
-        competitor_mentions: snapshot.competitorMentions
+        brand_share_pct: snapshot.brandSharePct,
+        competitor_shares: snapshot.competitorShares,
+        analyzed_queries: snapshot.analyzedQueries
       });
       if (error) throw error;
       return;
@@ -181,19 +186,26 @@ export const repository = {
     if (supabase.client) {
       const { data, error } = await supabase.client
         .from('history')
-        .select('*')
+        .select('id, analysis_id, week, snapshot_date, total_queries, queries_with_mentions, brand_mentions, brand_share_pct, competitor_shares, competitor_mentions, analyzed_queries')
         .eq('analysis_id', analysisId)
+        .order('snapshot_date', { ascending: true, nullsFirst: true })
         .order('week', { ascending: true });
       if (error) throw error;
       return (data ?? []).map((item) => ({
         id: item.id,
         analysisId: item.analysis_id,
-        week: item.week,
-        brandMentions: item.brand_mentions,
-        competitorMentions: item.competitor_mentions
+        snapshotDate: item.snapshot_date ?? (item.week ? new Date(item.week).toISOString() : new Date().toISOString()),
+        totalQueries: item.total_queries ?? 0,
+        queriesWithMentions: item.queries_with_mentions ?? item.brand_mentions ?? 0,
+        brandMentions: item.brand_mentions ?? 0,
+        brandSharePct: item.brand_share_pct ?? 0,
+        competitorShares: item.competitor_shares ?? {},
+        analyzedQueries: item.analyzed_queries ?? []
       }));
     }
-    return memStore.trends.filter((item) => item.analysisId === analysisId).sort((a, b) => (a.week > b.week ? 1 : -1));
+    return memStore.trends
+      .filter((item) => item.analysisId === analysisId)
+      .sort((a, b) => (a.snapshotDate > b.snapshotDate ? 1 : -1));
   },
 
   async getPlan(userId: string): Promise<PlanState> {
@@ -251,6 +263,7 @@ export const repository = {
       brandName,
       keywords,
       competitors,
+      trackedQueries: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -262,6 +275,7 @@ export const repository = {
         brand_name: project.brandName,
         keywords: project.keywords,
         competitors: project.competitors,
+        tracked_queries: project.trackedQueries,
         created_at: project.createdAt,
         updated_at: project.updatedAt
       });
@@ -289,6 +303,7 @@ export const repository = {
         brandName: data.brand_name,
         keywords: data.keywords ?? [],
         competitors: data.competitors ?? [],
+        trackedQueries: data.tracked_queries ?? [],
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
@@ -311,6 +326,7 @@ export const repository = {
         brandName: item.brand_name,
         keywords: item.keywords ?? [],
         competitors: item.competitors ?? [],
+        trackedQueries: item.tracked_queries ?? [],
         createdAt: item.created_at,
         updatedAt: item.updated_at
       }));
@@ -497,6 +513,18 @@ export const repository = {
     return allResults;
   },
 
+  async getAllProjectQueries(projectId: string): Promise<string[]> {
+    const runs = await this.getProjectRuns(projectId);
+    const allQueries = new Set<string>();
+
+    for (const run of runs) {
+      const results = await this.getRunResults(run.id);
+      results.forEach(qr => allQueries.add(qr.queryText));
+    }
+
+    return Array.from(allQueries);
+  },
+
   // Project Snapshot Methods
   async createSnapshot(
     projectId: string,
@@ -562,6 +590,77 @@ export const repository = {
       }));
     }
     return memStore.projectSnapshots.filter(s => s.projectId === projectId);
+  },
+
+  // Tracked Queries Methods
+  async addTrackedQuery(projectId: string, query: string): Promise<BrandProject> {
+    const supabase = getSupabase();
+    const project = await this.getProject(projectId);
+    if (!project) throw new Error('Project not found');
+
+    const trackedQueries = [...new Set([...project.trackedQueries, query])].slice(0, 10); // Max 10 tracked queries
+    const updatedAt = new Date().toISOString();
+
+    if (supabase.client) {
+      const { data, error } = await supabase.client
+        .from('brand_projects')
+        .update({ tracked_queries: trackedQueries, updated_at: updatedAt })
+        .eq('id', projectId)
+        .select()
+        .single();
+      if (error) throw error;
+      return {
+        id: data.id,
+        userId: data.user_id,
+        brandName: data.brand_name,
+        keywords: data.keywords ?? [],
+        competitors: data.competitors ?? [],
+        trackedQueries: data.tracked_queries ?? [],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+    }
+
+    const memProject = memStore.projects.find(p => p.id === projectId);
+    if (!memProject) throw new Error('Project not found');
+    memProject.trackedQueries = trackedQueries;
+    memProject.updatedAt = updatedAt;
+    return memProject;
+  },
+
+  async removeTrackedQuery(projectId: string, query: string): Promise<BrandProject> {
+    const supabase = getSupabase();
+    const project = await this.getProject(projectId);
+    if (!project) throw new Error('Project not found');
+
+    const trackedQueries = project.trackedQueries.filter(q => q !== query);
+    const updatedAt = new Date().toISOString();
+
+    if (supabase.client) {
+      const { data, error } = await supabase.client
+        .from('brand_projects')
+        .update({ tracked_queries: trackedQueries, updated_at: updatedAt })
+        .eq('id', projectId)
+        .select()
+        .single();
+      if (error) throw error;
+      return {
+        id: data.id,
+        userId: data.user_id,
+        brandName: data.brand_name,
+        keywords: data.keywords ?? [],
+        competitors: data.competitors ?? [],
+        trackedQueries: data.tracked_queries ?? [],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+    }
+
+    const memProject = memStore.projects.find(p => p.id === projectId);
+    if (!memProject) throw new Error('Project not found');
+    memProject.trackedQueries = trackedQueries;
+    memProject.updatedAt = updatedAt;
+    return memProject;
   }
 };
 

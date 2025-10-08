@@ -3,6 +3,7 @@ import LandingPage from './pages/LandingPage.tsx';
 import DashboardPage from './pages/DashboardPage.tsx';
 import ProjectsPage from './pages/ProjectsPage.tsx';
 import ProjectDashboardPage from './pages/ProjectDashboardPage.tsx';
+import QueryDetailPage from './pages/QueryDetailPage.tsx';
 import { useSession } from './hooks/useSession.tsx';
 
 const RequireAuth = ({ children }: { children: JSX.Element }) => {
@@ -37,6 +38,14 @@ const App = () => {
         element={(
           <RequireAuth>
             <ProjectDashboardPage />
+          </RequireAuth>
+        )}
+      />
+      <Route
+        path="/projects/:projectId/queries"
+        element={(
+          <RequireAuth>
+            <QueryDetailPage />
           </RequireAuth>
         )}
       />

@@ -13,7 +13,8 @@ dashboardRouter.get('/', authenticate, async (req, res, next) => {
     const { analysis, run } = await repository.latestAnalysis(userId);
     if (!analysis || !run) return res.json({ analysis: null, dashboard: null });
     const trends = await repository.getTrendSnapshots(analysis.id);
-    const dashboard = buildDashboardSummary(analysis.brand, analysis.competitors, run.mentions, trends);
+    const queryUniverse = Array.from(new Set(trends.flatMap((snapshot) => snapshot.analyzedQueries ?? [])));
+    const dashboard = buildDashboardSummary(analysis.brand, analysis.competitors, run.mentions, trends, queryUniverse);
     res.json({ analysis, dashboard });
   } catch (error) {
     next(error);

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MetricCard from '../components/MetricCard.tsx';
 import TrendChart from '../components/TrendChart.tsx';
@@ -10,34 +10,17 @@ import { useDashboard } from '../hooks/useDashboard.ts';
 import { useSession } from '../hooks/useSession.tsx';
 import { createCheckout } from '../api/index.ts';
 
-const containerStyle: React.CSSProperties = {
-  padding: '32px 48px 80px',
-  display: 'grid',
-  gridTemplateColumns: '320px 1fr',
-  gap: '32px'
-};
-
-const sideCardStyle: React.CSSProperties = {
-  background: 'var(--surface)',
-  borderRadius: '24px',
-  border: '1px solid rgba(255,255,255,0.08)',
-  padding: '24px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '16px'
-};
-
 const DashboardPage = () => {
   const { session, plan, setPlan, signOut } = useSession();
   const navigate = useNavigate();
   const token = session?.access_token ?? null;
   const { dashboardQuery, planQuery, analysisMutation } = useDashboard(token);
   const [brand, setBrand] = useState('Klio AI');
-  const [error, setError] = useState('');
   const [keywords, setKeywords] = useState('AI tutor, education');
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [upgradeError, setUpgradeError] = useState('');
   const [competitors, setCompetitors] = useState('TutorPlus, MindCoach');
+  const [error, setError] = useState('');
+  const [upgradeError, setUpgradeError] = useState('');
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   useEffect(() => {
     if (planQuery.data?.tier && planQuery.data.tier !== plan) {
@@ -49,6 +32,30 @@ const DashboardPage = () => {
   const dashboard = dashboardQuery.data?.dashboard ?? null;
   const analysis = dashboardQuery.data?.analysis ?? null;
   const loading = dashboardQuery.isLoading || planQuery.isLoading;
+
+  const readableDate = useMemo(() => {
+    if (!analysis) return 'No runs yet';
+    return new Date(analysis.createdAt).toLocaleString();
+  }, [analysis]);
+
+  const sentimentEntries = useMemo(() => {
+    if (!dashboard) return [] as Array<{ label: string; value: number; pct: number; tone: 'positive' | 'neutral' | 'negative' }>;
+    const { positive, neutral, negative } = dashboard.sentimentCard;
+    const total = positive + neutral + negative;
+    if (total === 0) return [];
+    return [
+      { label: 'Positive', value: positive, pct: Math.round((positive / total) * 100), tone: 'positive' as const },
+      { label: 'Neutral', value: neutral, pct: Math.round((neutral / total) * 100), tone: 'neutral' as const },
+      { label: 'Negative', value: negative, pct: Math.round((negative / total) * 100), tone: 'negative' as const }
+    ];
+  }, [dashboard]);
+
+  const brandName = analysis?.brand ?? brand;
+  const wowDelta = dashboard?.trendCard.delta ?? 0;
+  const brandShare = dashboard ? dashboard.summaryCard.shareOfVoice[brandName] ?? 0 : 0;
+  const totalQueries = dashboard?.summaryCard.totalQueries ?? 0;
+  const brandMentions = dashboard?.summaryCard.brandMentions ?? 0;
+  const coverageHeadline = dashboard ? (totalQueries > 0 ? `${brandMentions}/${totalQueries}` : '—') : '—';
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -66,136 +73,159 @@ const DashboardPage = () => {
     });
   };
 
-  const readableDate = useMemo(() => {
-    if (!analysis) return 'No runs yet';
-    return new Date(analysis.createdAt).toLocaleString();
-  }, [analysis]);
-
   const handleUpgrade = async () => {
     if (!token) return;
     setUpgradeError('');
     setUpgradeLoading(true);
     try {
-      const session = await createCheckout(token);
-      window.location.href = session.url;
+      const checkout = await createCheckout(token);
+      window.location.href = checkout.url;
     } catch (err) {
-      console.error(err);
       setUpgradeError((err as Error).message || 'Unable to start checkout');
     } finally {
       setUpgradeLoading(false);
     }
   };
 
-
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 48px' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>RankAI</span>
+    <div className="dashboard">
+      <header className="dashboard__topbar">
+        <div className="dashboard__brand">
+          <span className="dashboard__logo">RankAI</span>
           <PlanBadge tier={planTier} />
         </div>
-        <button
-          onClick={async () => {
-            await signOut();
-            navigate('/');
-          }}
-          style={{ padding: '10px 16px', borderRadius: '999px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}
-        >
-          Log out
-        </button>
+        <div className="dashboard__actions">
+          <button
+            type="button"
+            className="dashboard-button dashboard-button--ghost"
+            onClick={async () => {
+              await signOut();
+              navigate('/');
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </header>
 
-      <div style={containerStyle}>
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div style={sideCardStyle}>
-            <h2 style={{ margin: 0 }}>Run fresh analysis</h2>
-            <p style={{ opacity: 0.7, fontSize: '14px' }}>Choose your brand, keywords, and up to five competitors.</p>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '14px' }}>
-                Brand
-                <input value={brand} onChange={(event) => setBrand(event.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '14px' }}>
-                Keywords (comma separated)
-                <input value={keywords} onChange={(event) => setKeywords(event.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '14px' }}>
-                Competitors (comma separated)
-                <input value={competitors} onChange={(event) => setCompetitors(event.target.value)} style={inputStyle} />
-              </label>
-              <button
-                type="submit"
-                disabled={analysisMutation.isLoading}
-                style={{ padding: '12px 18px', borderRadius: '12px', border: 'none', background: 'var(--accent)', color: '#0b0d11', fontWeight: 600, cursor: 'pointer', opacity: analysisMutation.isLoading ? 0.6 : 1 }}
-              >
-                {analysisMutation.isLoading ? 'Running…' : 'Run analysis'}
-              </button>
-              {error && <span style={{ color: 'var(--danger)', fontSize: '12px' }}>{error}</span>}
-              <span style={{ fontSize: '12px', opacity: 0.5 }}>Last run: {readableDate}</span>
-            </form>
-          </div>
-          <div style={sideCardStyle}>
-            <h3 style={{ margin: 0 }}>Plan</h3>
-            <p style={{ opacity: 0.7, fontSize: '14px' }}>
-              {planTier === 'pro' ? 'Weekly auto-refresh active. Alerts will drop every Monday.' : 'Upgrade to unlock weekly tracking, full competitor comparisons, and alerts.'}
-            </p>
-            {planTier === 'free' && <p style={{ fontSize: '13px', opacity: 0.55 }}>Free plan: one analysis/month and a single competitor.</p>}
-            {planTier === 'free' && (
-              <>
-                <button
-                  onClick={handleUpgrade}
-                  disabled={upgradeLoading}
-                  style={{ padding: '10px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'inherit', fontWeight: 600, cursor: 'pointer', opacity: upgradeLoading ? 0.6 : 1 }}
-                >
-                  {upgradeLoading ? 'Connecting…' : 'Upgrade to Pro'}
-                </button>
-                {upgradeError && <span style={{ color: 'var(--danger)', fontSize: '12px' }}>{upgradeError}</span>}
-              </>
-            )}
-          </div>
-        </aside>
-        <section style={{ display: 'grid', gap: '24px' }}>
-          {loading ? (
-            <div style={{ opacity: 0.6 }}>Loading dashboard…</div>
-          ) : dashboard ? (
-            <div style={{ display: 'grid', gap: '24px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-              <MetricCard title="Summary">
-                <div style={{ fontSize: '32px', fontWeight: 600 }}>
-                  {dashboard.summaryCard.brandMentions}/{dashboard.summaryCard.totalQueries} queries mention you
+      <main className="dashboard__content">
+        <div className="dashboard__column dashboard__column--primary">
+          <MetricCard
+            title="Visibility Console"
+            subtitle={`Last updated ${readableDate}`}
+            className="panel--hero"
+          >
+            <div className="dashboard-summary">
+              <div className="dashboard-summary__intro">
+                <span className="dashboard-summary__tagline">AI Search footprint</span>
+                <h1 className="dashboard-summary__title">{brandName}</h1>
+              </div>
+              <div className="dashboard-summary__headline">{coverageHeadline}</div>
+              <div className="dashboard-summary__metrics">
+                <div className="dashboard-metric">
+                  <span className="dashboard-metric__label">Share of voice</span>
+                  <span className="dashboard-metric__value">{brandShare}%</span>
                 </div>
-                <ShareOfVoiceList share={dashboard.summaryCard.shareOfVoice} />
-              </MetricCard>
-              <MetricCard title="Trend">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '32px' }}>{dashboard.trendCard.series.at(-1)?.value ?? 0}</strong>
-                  <span style={{ color: dashboard.trendCard.delta >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                    {dashboard.trendCard.delta >= 0 ? '+' : ''}{dashboard.trendCard.delta} WoW
-                  </span>
+                <div className="dashboard-metric">
+                  <span className="dashboard-metric__label">WoW delta</span>
+                  <span className="dashboard-metric__value">{wowDelta >= 0 ? '+' : ''}{wowDelta}</span>
                 </div>
-                <TrendChart points={dashboard.trendCard.series} />
-              </MetricCard>
-              <MetricCard title="Gaps">
-                <GapList gaps={dashboard.gapCard} />
-              </MetricCard>
-              <MetricCard title="Actions">
-                <ActionList actions={dashboard.actionCard} />
-              </MetricCard>
+                <div className="dashboard-metric">
+                  <span className="dashboard-metric__label">Queries tracked</span>
+                  <span className="dashboard-metric__value">{totalQueries}</span>
+                </div>
+                {sentimentEntries.length > 0 && (
+                  <div className="dashboard-metric">
+                    <span className="dashboard-metric__label">Positive mentions</span>
+                    <span className="dashboard-metric__value">{sentimentEntries[0]?.value ?? 0}</span>
+                  </div>
+                )}
+              </div>
+              <form className="dashboard-form dashboard-form--inline" onSubmit={handleSubmit}>
+                <label>
+                  Brand
+                  <input
+                    value={brand}
+                    onChange={(event) => setBrand(event.target.value)}
+                    className="dashboard-form__input"
+                    placeholder="e.g., Stripe"
+                  />
+                </label>
+                <label>
+                  Keywords
+                  <input
+                    value={keywords}
+                    onChange={(event) => setKeywords(event.target.value)}
+                    className="dashboard-form__input"
+                    placeholder="Payments, fintech"
+                  />
+                </label>
+                <label>
+                  Competitors
+                  <input
+                    value={competitors}
+                    onChange={(event) => setCompetitors(event.target.value)}
+                    className="dashboard-form__input"
+                    placeholder="PayPal, Square"
+                  />
+                </label>
+                <div className="dashboard-form__actions">
+                  <button
+                    type="submit"
+                    disabled={analysisMutation.isLoading}
+                    className="dashboard-button dashboard-button--primary"
+                  >
+                    {analysisMutation.isLoading ? 'Running…' : 'Run analysis'}
+                  </button>
+                  <span className="dashboard-note">Last run: {readableDate}</span>
+                  {error && <span style={{ color: '#dc2626', fontSize: '0.78rem' }}>{error}</span>}
+                </div>
+              </form>
             </div>
+          </MetricCard>
+
+          <MetricCard title="Share of Voice" subtitle="Presence across monitored queries">
+            {dashboard ? <ShareOfVoiceList share={dashboard.summaryCard.shareOfVoice} /> : <div className="empty-state">Share of voice will appear after your first run.</div>}
+          </MetricCard>
+        </div>
+
+        <div className="dashboard__column dashboard__column--secondary">
+          {loading ? (
+            <div className="dashboard__loading">Loading dashboard…</div>
           ) : (
-            <div style={{ opacity: 0.6 }}>Run an analysis to populate the dashboard.</div>
+            <>
+              <MetricCard title="Momentum" subtitle="Last 10 refreshes">
+                {dashboard ? <TrendChart points={dashboard.trendCard.series} /> : <div className="empty-state">Trend data will populate after you record runs.</div>}
+              </MetricCard>
+
+              <MetricCard title="Opportunity Map" subtitle="Where competitors lead">
+                {dashboard ? <GapList gaps={dashboard.gapCard} /> : <div className="empty-state">We surface query gaps once data is collected.</div>}
+              </MetricCard>
+
+              <MetricCard title="Next Moves" subtitle="Actions to lift share of voice">
+                {dashboard ? <ActionList actions={dashboard.actionCard} /> : <div className="empty-state">Your prioritized actions will appear after your first run.</div>}
+                {planTier === 'free' ? (
+                  <div className="plan-upgrade__foot">
+                    <button
+                      type="button"
+                      onClick={handleUpgrade}
+                      disabled={upgradeLoading}
+                      className="dashboard-button dashboard-button--subtle"
+                    >
+                      {upgradeLoading ? 'Connecting…' : 'Upgrade to Pro'}
+                    </button>
+                    {upgradeError && <span style={{ color: '#dc2626', fontSize: '0.75rem' }}>{upgradeError}</span>}
+                  </div>
+                ) : (
+                  <span className="plan-upgrade__perk">Pro keeps this console synced with weekly auto-refresh.</span>
+                )}
+              </MetricCard>
+            </>
           )}
-        </section>
-      </div>
+        </div>
+      </main>
     </div>
   );
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '12px 14px',
-  borderRadius: '12px',
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: 'rgba(10,12,16,0.8)',
-  color: 'inherit'
 };
 
 export default DashboardPage;

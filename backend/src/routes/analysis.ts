@@ -28,23 +28,47 @@ analysisRouter.post('/', authenticate, async (req, res, next) => {
       }
     }
 
-    const mentions = await runBrandVisibilityAnalysis(brand, keywords, competitors);
-    const cleaned = sanitizeMentions(mentions, [brand, ...competitors]);
-    const analysis = await repository.createAnalysis({ brand, keywords, competitors, userId }, cleaned);
+    const analysisResults = await runBrandVisibilityAnalysis(brand, keywords, competitors);
+    const mentions = analysisResults.flatMap((result) => result.mentions);
+    const cleanedMentions = sanitizeMentions(mentions, [brand, ...competitors]);
+    const uniqueQueries = Array.from(new Set(analysisResults.map((result) => result.query)));
+
+    const brandQueryAppearances = new Set(
+      cleanedMentions.filter((item) => item.brand === brand).map((item) => item.query)
+    ).size;
+    const competitorQueryCounts = competitors.reduce<Record<string, number>>((acc, competitor) => {
+      acc[competitor] = new Set(
+        cleanedMentions.filter((item) => item.brand === competitor).map((item) => item.query)
+      ).size;
+      return acc;
+    }, {});
+
+    const totalQueries = analysisResults.length;
+    const queriesWithMentions = new Set(cleanedMentions.map((item) => item.query)).size;
+    const brandSharePct = totalQueries === 0 ? 0 : Math.round((brandQueryAppearances / totalQueries) * 100);
+    const competitorShares = competitors.reduce<Record<string, number>>((acc, competitor) => {
+      const count = competitorQueryCounts[competitor] ?? 0;
+      acc[competitor] = totalQueries === 0 ? 0 : Math.round((count / totalQueries) * 100);
+      return acc;
+    }, {});
+    const snapshotDate = new Date().toISOString();
+
+    const analysis = await repository.createAnalysis({ brand, keywords, competitors, userId }, cleanedMentions);
 
     await repository.saveTrendSnapshot({
       id: randomUUID(),
       analysisId: analysis.id,
-      week: new Date().toISOString().slice(0, 10),
-      brandMentions: cleaned.filter((item) => item.brand === brand).length,
-      competitorMentions: competitors.reduce<Record<string, number>>((acc, competitor) => {
-        acc[competitor] = cleaned.filter((item) => item.brand === competitor).length;
-        return acc;
-      }, {})
+      snapshotDate,
+      totalQueries,
+      queriesWithMentions,
+      brandMentions: brandQueryAppearances,
+      brandSharePct,
+      competitorShares,
+      analyzedQueries: uniqueQueries
     });
 
     const trends = await repository.getTrendSnapshots(analysis.id);
-    const dashboard = buildDashboardSummary(brand, competitors, cleaned, trends);
+    const dashboard = buildDashboardSummary(brand, competitors, cleanedMentions, trends, uniqueQueries);
     res.json({ analysis, dashboard });
   } catch (error) {
     next(error);

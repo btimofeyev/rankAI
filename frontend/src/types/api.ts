@@ -72,6 +72,13 @@ export type Project = {
   updatedAt: string;
 };
 
+export type Citation = {
+  url: string;
+  title: string;
+  domain: string;
+  snippet?: string;
+};
+
 export type QueryPerformance = {
   query: string;
   totalAppearances: number;
@@ -88,8 +95,12 @@ export type QueryPerformance = {
   competitorData: Record<string, {
     appearances: number;
     avgPosition: number;
+    trendData?: number[]; // Last 5-10 appearance rates
   }>;
   isTracked: boolean;
+  citations?: Citation[];
+  usedWebSearch?: boolean;
+  trendData?: number[]; // Brand's last 5-10 appearance rates
 };
 
 export type AnalysisRun = {
@@ -99,6 +110,18 @@ export type AnalysisRun = {
   queriesGenerated: number;
 };
 
+export type ProjectSnapshot = {
+  id: string;
+  projectId: string;
+  runId: string;
+  snapshotDate: string;
+  totalQueries: number;
+  queriesWithMentions: number;
+  brandMentions: number;
+  brandSharePct: number;
+  competitorShares: Record<string, number>;
+};
+
 export type ProjectsListResponse = {
   projects: Project[];
 };
@@ -106,6 +129,7 @@ export type ProjectsListResponse = {
 export type ProjectResponse = {
   project: Project;
   runs: AnalysisRun[];
+  snapshots: ProjectSnapshot[];
   dashboard: DashboardCards | null;
   totalQueries: number;
 };
@@ -114,6 +138,7 @@ export type CreateProjectPayload = {
   brandName: string;
   keywords: string[];
   competitors: string[];
+  queries: string[];
 };
 
 export type UpdateProjectPayload = {
@@ -125,4 +150,64 @@ export type RunAnalysisResponse = {
   run: AnalysisRun;
   dashboard: DashboardCards;
   totalQueries: number;
+};
+
+export type QuerySuggestion = {
+  query: string;
+  score: number;
+  reason: string;
+  category: 'zero_visibility' | 'competitor_gap' | 'high_performer' | 'related';
+  metadata: {
+    competitorMentions?: number;
+    competitorName?: string;
+    brandMissing: boolean;
+    avgPosition?: number;
+    appearanceRate?: number;
+  };
+};
+
+export type QuerySuggestionsResponse = {
+  suggestions: QuerySuggestion[];
+};
+
+export type BulkTrackResponse = {
+  project: Project;
+  added: number;
+};
+
+export type QueryTrendDataPoint = {
+  date: string;
+  runId: string;
+  appeared: boolean;
+  position: number | null;
+  sentiment: 'positive' | 'neutral' | 'negative' | null;
+  context: string | null;
+  competitorPositions: Record<string, number | null>;
+};
+
+export type QueryTrendAnalysis = {
+  query: string;
+  dataPoints: QueryTrendDataPoint[];
+  overallStats: {
+    totalRuns: number;
+    appearanceCount: number;
+    appearanceRate: number;
+    avgPosition: number;
+    bestPosition: number;
+    worstPosition: number;
+    trendDirection: 'up' | 'down' | 'stable';
+    sentimentBreakdown: {
+      positive: number;
+      neutral: number;
+      negative: number;
+    };
+  };
+  competitorComparison: Record<string, {
+    appearanceCount: number;
+    avgPosition: number;
+  }>;
+};
+
+export type QueryTrendsResponse = {
+  trends: QueryTrendAnalysis;
 };

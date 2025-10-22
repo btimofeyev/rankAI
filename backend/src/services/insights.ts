@@ -161,11 +161,11 @@ export const buildDashboardSummary = (
 
   // Build trend series from snapshots (brand + competitors)
   // Note: snapshot.brandMentions now stores "queries appeared in" count
-  const series = snapshots
+  const series: { week: string; value: number; [brand: string]: string | number }[] = snapshots
     .slice(0, 10) // Last 10 runs
     .reverse() // Oldest to newest
     .map((snapshot) => {
-      const point: Record<string, string | number> = {
+      const point: { week: string; value: number; [brand: string]: string | number } = {
         week: new Date(snapshot.snapshotDate).toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric'
@@ -183,7 +183,7 @@ export const buildDashboardSummary = (
       return point;
     });
 
-  const delta = series.length >= 2 ? series[series.length - 1].value - series[series.length - 2].value : 0;
+  const delta = series.length >= 2 ? (series[series.length - 1]?.value ?? 0) - (series[series.length - 2]?.value ?? 0) : 0;
   const gaps = findGapOpportunities(mentions, brand, competitors, queryUniverse);
   const actionCard = buildActionItems(gaps, delta, totalQueries, queriesWithBrand);
 

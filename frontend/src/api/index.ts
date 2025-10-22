@@ -10,7 +10,10 @@ import {
   CreateProjectPayload,
   UpdateProjectPayload,
   RunAnalysisResponse,
-  QueryPerformance
+  QueryPerformance,
+  QuerySuggestionsResponse,
+  BulkTrackResponse,
+  QueryTrendsResponse
 } from '../types/api.ts';
 
 const baseURL = import.meta.env.VITE_API_BASE ?? '/api';
@@ -90,5 +93,20 @@ export const untrackQuery = async (token: string, projectId: string, query: stri
     headers: authHeaders(token),
     data: { query }
   });
+  return data;
+};
+
+export const fetchQuerySuggestions = async (token: string, projectId: string): Promise<QuerySuggestionsResponse> => {
+  const { data } = await client.get<QuerySuggestionsResponse>(`/projects/${projectId}/query-suggestions`, { headers: authHeaders(token) });
+  return data;
+};
+
+export const bulkTrackQueries = async (token: string, projectId: string, queries: string[]): Promise<BulkTrackResponse> => {
+  const { data } = await client.post<BulkTrackResponse>(`/projects/${projectId}/tracked-queries/bulk`, { queries }, { headers: authHeaders(token) });
+  return data;
+};
+
+export const fetchQueryTrends = async (token: string, projectId: string, queryText: string): Promise<QueryTrendsResponse> => {
+  const { data } = await client.get<QueryTrendsResponse>(`/projects/${projectId}/query-trends/${encodeURIComponent(queryText)}`, { headers: authHeaders(token) });
   return data;
 };

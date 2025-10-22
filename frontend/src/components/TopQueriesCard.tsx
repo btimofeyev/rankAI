@@ -1,4 +1,5 @@
 import { QueryPerformance } from '../types/api.ts';
+import CitationsDisplay from './CitationsDisplay.tsx';
 
 type TopQueriesCardProps = {
   performance: QueryPerformance[];
@@ -77,6 +78,18 @@ const TopQueriesCard = ({ performance, onTrack, onUntrack, loading }: TopQueries
                 <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: 1.3 }}>
                   {perf.query.length > 70 ? perf.query.substring(0, 70) + '...' : perf.query}
                 </div>
+                {perf.usedWebSearch && (
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '6px',
+                    background: 'rgba(91, 140, 254, 0.15)',
+                    color: 'var(--accent)',
+                    fontSize: '10px',
+                    fontWeight: 600
+                  }}>
+                    🌐 WEB
+                  </span>
+                )}
               </div>
               <div style={{ display: 'flex', gap: '12px', fontSize: '12px', opacity: 0.7 }}>
                 <span>{perf.brandAppearances} mentions</span>
@@ -88,7 +101,18 @@ const TopQueriesCard = ({ performance, onTrack, onUntrack, loading }: TopQueries
                     <span>Avg #{ perf.avgPosition}</span>
                   </>
                 )}
+                {perf.citations && perf.citations.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>{perf.citations.length} source{perf.citations.length !== 1 ? 's' : ''}</span>
+                  </>
+                )}
               </div>
+              {perf.citations && perf.citations.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <CitationsDisplay citations={perf.citations} compact />
+                </div>
+              )}
             </div>
             <button
               onClick={() => perf.isTracked ? onUntrack(perf.query) : onTrack(perf.query)}

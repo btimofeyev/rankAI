@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { env } from '../config/env.js';
-import { VisibilityMention } from '../types.js';
+import { VisibilityMention, Citation } from '../types.js';
 import { logger } from '../utils/logger.js';
+import { queryWithWebSearch, queryWithoutWebSearch } from './webSearch.js';
 
 const openai = env.openaiApiKey ? new OpenAI({ apiKey: env.openaiApiKey }) : null;
 
@@ -20,9 +21,7 @@ const generateIndustryQueries = async (keywords: string[], count: number): Promi
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-5',
-      reasoning_effort: 'low',
-      verbosity: 'low',
+      model: env.openaiModel,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'user', content: prompt }
@@ -162,6 +161,8 @@ export type QueryAnalysisResult = {
   query: string;
   responseText: string;
   mentions: VisibilityMention[];
+  citations?: Citation[];
+  usedWebSearch?: boolean;
 };
 
 export const runBrandVisibilityAnalysis = async (
@@ -181,30 +182,19 @@ export const runBrandVisibilityAnalysis = async (
   }
 
   try {
-    // Step 1: Combine tracked queries + generated queries
-    const TOTAL_QUERIES = 20;
-    const numTracked = Math.min(trackedQueries.length, 10); // Max 10 tracked queries
-    const numToGenerate = TOTAL_QUERIES - numTracked;
+    // Use only the tracked queries (no more random generation)
+    const queries = trackedQueries;
 
-    logger.info({
-      trackedCount: numTracked,
-      toGenerate: numToGenerate,
-      keywords
-    }, 'Preparing query set');
-
-    // Generate additional queries if needed
-    const generatedQueries = numToGenerate > 0
-      ? await generateIndustryQueries(keywords, numToGenerate)
-      : [];
-
-    // Combine: tracked first, then generated
-    const queries = [...trackedQueries.slice(0, numTracked), ...generatedQueries];
+    if (queries.length === 0) {
+      logger.warn({ brand }, 'No queries to analyze');
+      return [];
+    }
 
     logger.info({
       totalQueries: queries.length,
-      trackedQueries: numTracked,
-      generatedQueries: generatedQueries.length
-    }, 'Query set prepared, starting analysis');
+      brand,
+      keywords
+    }, 'Starting analysis with defined queries');
 
     const brands = [brand, ...competitors];
     const results: QueryAnalysisResult[] = [];
@@ -224,34 +214,37 @@ export const runBrandVisibilityAnalysis = async (
 
       const batchPromises = batch.map(async (query) => {
         try {
-          const response = await openai.chat.completions.create({
-            model: 'gpt-5',
-            reasoning_effort: 'low',
-            verbosity: 'medium',
-            messages: [
-              {
-                role: 'user',
-                content: query
-              }
-            ]
-          });
+          // Use web search if enabled, otherwise fallback to standard query
+          const searchResult = env.useWebSearch
+            ? await queryWithWebSearch(query)
+            : await queryWithoutWebSearch(query);
 
-          const responseText = response.choices[0]?.message?.content ?? '';
+          const { responseText, citations, usedWebSearch } = searchResult;
 
           if (responseText) {
             const mentions = analyzeResponseForMentions(query, responseText, brands);
-            logger.info({ query, mentionsFound: mentions.length, brands: mentions.map(m => m.brand) }, 'Query analyzed');
+            logger.info({
+              query,
+              mentionsFound: mentions.length,
+              brands: mentions.map(m => m.brand),
+              citationsFound: citations?.length || 0,
+              usedWebSearch
+            }, 'Query analyzed');
             return {
               query,
               responseText,
-              mentions
+              mentions,
+              citations,
+              usedWebSearch
             };
           } else {
-            logger.info({ query }, 'Query analyzed - no response text');
+            logger.info({ query, usedWebSearch }, 'Query analyzed - no response text');
             return {
               query,
               responseText: '',
-              mentions: []
+              mentions: [],
+              citations,
+              usedWebSearch
             };
           }
         } catch (queryError) {
@@ -259,7 +252,9 @@ export const runBrandVisibilityAnalysis = async (
           return {
             query,
             responseText: '',
-            mentions: []
+            mentions: [],
+            citations: [],
+            usedWebSearch: false
           };
         }
       });

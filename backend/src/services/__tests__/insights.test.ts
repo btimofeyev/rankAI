@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { buildDashboardSummary } from '../insights.js';
 
 const mentions = [
-  { query: 'best AI tutor', brand: 'Klio AI', position: 1, sentiment: 'positive', context: 'Top pick' },
-  { query: 'best AI tutor', brand: 'TutorPlus', position: 2, sentiment: 'neutral', context: 'Runner up' },
-  { query: 'AI tutor for kids', brand: 'MindCoach', position: 1, sentiment: 'positive', context: 'Kids focus' }
+  { query: 'best AI tutor', brand: 'Klio AI', position: 1, sentiment: 'positive' as const, context: 'Top pick' },
+  { query: 'best AI tutor', brand: 'TutorPlus', position: 2, sentiment: 'neutral' as const, context: 'Runner up' },
+  { query: 'AI tutor for kids', brand: 'MindCoach', position: 1, sentiment: 'positive' as const, context: 'Kids focus' }
 ];
 
 const trends = [
-  { id: '1', analysisId: 'A', week: '2024-06-01', brandMentions: 2, competitorMentions: { TutorPlus: 3, MindCoach: 4 } },
-  { id: '2', analysisId: 'A', week: '2024-06-08', brandMentions: 3, competitorMentions: { TutorPlus: 2, MindCoach: 5 } }
+  { snapshotDate: '2024-06-01', brandMentions: 2, totalQueries: 9, competitorShares: { TutorPlus: 33, MindCoach: 44 } },
+  { snapshotDate: '2024-06-08', brandMentions: 3, totalQueries: 10, competitorShares: { TutorPlus: 20, MindCoach: 50 } }
 ];
 
 describe('buildDashboardSummary', () => {

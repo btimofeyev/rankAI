@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 import { env } from '../config/env.js';
 import { repository } from './repository.js';
 
-const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey, { apiVersion: '2023-10-16' }) : null;
+const stripe = env.stripeSecretKey ? new Stripe(env.stripeSecretKey, { apiVersion: '2024-04-10' }) : null;
 
 const PRICE_ID = 'price_rankai_pro';
 

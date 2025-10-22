@@ -5,6 +5,8 @@ import { repository } from '../services/repository.js';
 import { runBrandVisibilityAnalysis } from '../services/gptQuery.js';
 import { buildDashboardSummary } from '../services/insights.js';
 import { calculateQueryPerformance } from '../services/queryAnalytics.js';
+import { generateQuerySuggestions } from '../services/querySuggestions.js';
+import { getQueryTrendsOverTime } from '../services/queryTrends.js';
 import { logger } from '../utils/logger.js';
 
 export const projectsRouter = Router();
@@ -15,14 +17,23 @@ projectsRouter.post('/', authenticate, async (req, res, next) => {
     const userId = req.user?.id;
     if (!userId) throw new createHttpError.Unauthorized('user missing');
 
-    const { brandName, keywords = [], competitors = [] } = req.body ?? {};
+    const { brandName, keywords = [], competitors = [], queries = [] } = req.body ?? {};
     if (!brandName) throw new createHttpError.BadRequest('brandName required');
     if (!Array.isArray(keywords) || !Array.isArray(competitors)) {
       throw new createHttpError.BadRequest('keywords and competitors must be arrays');
     }
+    if (!Array.isArray(queries)) {
+      throw new createHttpError.BadRequest('queries must be an array');
+    }
+    if (queries.length === 0) {
+      throw new createHttpError.BadRequest('At least 1 query is required');
+    }
+    if (queries.length > 20) {
+      throw new createHttpError.BadRequest('Maximum 20 queries allowed');
+    }
 
-    const project = await repository.createProject(userId, brandName, keywords, competitors);
-    logger.info({ projectId: project.id, brandName }, 'Project created');
+    const project = await repository.createProject(userId, brandName, keywords, competitors, queries);
+    logger.info({ projectId: project.id, brandName, queriesCount: queries.length }, 'Project created');
     res.json({ project });
   } catch (error) {
     next(error);
@@ -88,6 +99,7 @@ projectsRouter.get('/:projectId', authenticate, async (req, res, next) => {
     res.json({
       project,
       runs,
+      snapshots,
       dashboard,
       totalQueries: totalQueriesFromDB || allResults.length
     });
@@ -384,6 +396,103 @@ projectsRouter.get('/:projectId/query-performance', authenticate, async (req, re
     );
 
     res.json({ performance });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get query suggestions
+projectsRouter.get('/:projectId/query-suggestions', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    const suggestions = await generateQuerySuggestions(
+      projectId,
+      project.brandName,
+      project.competitors,
+      project.trackedQueries,
+      project.keywords
+    );
+
+    logger.info({ projectId, suggestionsCount: suggestions.length }, 'Generated query suggestions');
+    res.json({ suggestions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get query trend analysis
+projectsRouter.get('/:projectId/query-trends/:queryText', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId, queryText } = req.params;
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    const trends = await getQueryTrendsOverTime(
+      projectId,
+      decodeURIComponent(queryText),
+      project.brandName,
+      project.competitors
+    );
+
+    logger.info({ projectId, queryText, dataPoints: trends.dataPoints.length }, 'Query trends retrieved');
+    res.json({ trends });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk track queries
+projectsRouter.post('/:projectId/tracked-queries/bulk', authenticate, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw new createHttpError.Unauthorized('user missing');
+
+    const { projectId } = req.params;
+    const { queries } = req.body ?? {};
+
+    if (!Array.isArray(queries)) {
+      throw new createHttpError.BadRequest('queries array required');
+    }
+
+    // Verify ownership
+    const project = await repository.getProject(projectId);
+    if (!project) throw new createHttpError.NotFound('Project not found');
+    if (project.userId !== userId) throw new createHttpError.Forbidden('Access denied');
+
+    // Add queries up to the limit (10 total)
+    const currentCount = project.trackedQueries.length;
+    const availableSlots = 10 - currentCount;
+    const queriesToAdd = queries.slice(0, availableSlots);
+
+    let updatedProject = project;
+    for (const query of queriesToAdd) {
+      if (typeof query === 'string' && query.trim()) {
+        updatedProject = await repository.addTrackedQuery(projectId, query.trim());
+      }
+    }
+
+    logger.info({
+      projectId,
+      added: queriesToAdd.length,
+      total: updatedProject.trackedQueries.length
+    }, 'Bulk tracked queries');
+
+    res.json({ project: updatedProject, added: queriesToAdd.length });
   } catch (error) {
     next(error);
   }

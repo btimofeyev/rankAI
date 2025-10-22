@@ -90,6 +90,13 @@ export type AnalysisRun = {
   queriesGenerated: number;
 };
 
+export type Citation = {
+  url: string;
+  title: string;
+  domain: string;
+  snippet?: string;
+};
+
 export type QueryResult = {
   id: string;
   runId: string;
@@ -99,6 +106,8 @@ export type QueryResult = {
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   context: string | null;
   responseText?: string;
+  citations?: Citation[];
+  usedWebSearch?: boolean;
 };
 
 export type ProjectSnapshot = {
@@ -111,4 +120,18 @@ export type ProjectSnapshot = {
   brandMentions: number;
   brandSharePct: number;
   competitorShares: Record<string, number>;
+};
+
+export type QuerySuggestion = {
+  query: string;
+  score: number;
+  reason: string;
+  category: 'zero_visibility' | 'competitor_gap' | 'high_performer' | 'related';
+  metadata: {
+    competitorMentions?: number;
+    competitorName?: string;
+    brandMissing: boolean;
+    avgPosition?: number;
+    appearanceRate?: number;
+  };
 };

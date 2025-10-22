@@ -255,7 +255,7 @@ export const repository = {
   },
 
   // Brand Project Methods
-  async createProject(userId: string, brandName: string, keywords: string[], competitors: string[]): Promise<BrandProject> {
+  async createProject(userId: string, brandName: string, keywords: string[], competitors: string[], trackedQueries: string[] = []): Promise<BrandProject> {
     const supabase = getSupabase();
     const project: BrandProject = {
       id: randomUUID(),
@@ -263,7 +263,7 @@ export const repository = {
       brandName,
       keywords,
       competitors,
-      trackedQueries: [],
+      trackedQueries,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -280,10 +280,10 @@ export const repository = {
         updated_at: project.updatedAt
       });
       if (error) throw error;
-    } else {
-      memStore.projects.push(project);
+      return project;
     }
 
+    memStore.projects.push(project);
     return project;
   },
 
@@ -297,7 +297,7 @@ export const repository = {
         .maybeSingle();
       if (error) throw error;
       if (!data) return null;
-      return {
+      const project: BrandProject = {
         id: data.id,
         userId: data.user_id,
         brandName: data.brand_name,
@@ -307,6 +307,7 @@ export const repository = {
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
+      return project;
     }
     return memStore.projects.find(p => p.id === projectId) ?? null;
   },
@@ -320,16 +321,17 @@ export const repository = {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((item) => ({
-        id: item.id,
-        userId: item.user_id,
-        brandName: item.brand_name,
-        keywords: item.keywords ?? [],
-        competitors: item.competitors ?? [],
-        trackedQueries: item.tracked_queries ?? [],
-        createdAt: item.created_at,
-        updatedAt: item.updated_at
-      }));
+
+    return (data ?? []).map((item) => ({
+      id: item.id,
+      userId: item.user_id,
+      brandName: item.brand_name,
+      keywords: item.keywords ?? [],
+      competitors: item.competitors ?? [],
+      trackedQueries: item.tracked_queries ?? [],
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    }));
     }
     return memStore.projects.filter(p => p.userId === userId);
   },
@@ -352,6 +354,7 @@ export const repository = {
         brandName: data.brand_name,
         keywords: data.keywords ?? [],
         competitors: data.competitors ?? [],
+        trackedQueries: data.tracked_queries ?? [],
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
@@ -401,7 +404,7 @@ export const repository = {
     return run;
   },
 
-  async saveQueryResults(runId: string, results: Array<{ query: string; responseText: string; mentions: VisibilityMention[] }>): Promise<void> {
+  async saveQueryResults(runId: string, results: Array<{ query: string; responseText: string; mentions: VisibilityMention[]; citations?: any[]; usedWebSearch?: boolean }>): Promise<void> {
     const supabase = getSupabase();
     const queryResults: QueryResult[] = [];
 
@@ -417,7 +420,9 @@ export const repository = {
           position: null,
           sentiment: null,
           context: null,
-          responseText: result.responseText
+          responseText: result.responseText,
+          citations: result.citations,
+          usedWebSearch: result.usedWebSearch
         });
       } else {
         // Query with mentions - store one row per mention
@@ -430,7 +435,9 @@ export const repository = {
             position: mention.position,
             sentiment: mention.sentiment,
             context: mention.context,
-            responseText: result.responseText
+            responseText: result.responseText,
+            citations: result.citations,
+            usedWebSearch: result.usedWebSearch
           });
         }
       }
@@ -446,7 +453,9 @@ export const repository = {
           position: qr.position,
           sentiment: qr.sentiment,
           context: qr.context,
-          response_text: qr.responseText
+          response_text: qr.responseText,
+          citations: qr.citations || [],
+          used_web_search: qr.usedWebSearch || false
         }))
       );
       if (error) throw error;
@@ -489,7 +498,9 @@ export const repository = {
         brand: item.brand,
         position: item.position,
         sentiment: item.sentiment,
-        context: item.context
+        context: item.context,
+        citations: item.citations || [],
+        usedWebSearch: item.used_web_search || false
       }));
     }
     return memStore.queryResults.filter(qr => qr.runId === runId);
@@ -598,6 +609,10 @@ export const repository = {
     const project = await this.getProject(projectId);
     if (!project) throw new Error('Project not found');
 
+    if (project.trackedQueries.length >= 10) {
+      throw new Error('Maximum 10 queries allowed');
+    }
+
     const trackedQueries = [...new Set([...project.trackedQueries, query])].slice(0, 10); // Max 10 tracked queries
     const updatedAt = new Date().toISOString();
 
@@ -632,6 +647,10 @@ export const repository = {
     const supabase = getSupabase();
     const project = await this.getProject(projectId);
     if (!project) throw new Error('Project not found');
+
+    if (project.trackedQueries.length <= 1) {
+      throw new Error('Cannot remove last query. Projects must have at least 1 query.');
+    }
 
     const trackedQueries = project.trackedQueries.filter(q => q !== query);
     const updatedAt = new Date().toISOString();

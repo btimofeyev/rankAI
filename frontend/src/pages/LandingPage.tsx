@@ -1,20 +1,30 @@
 import { FormEvent, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.tsx';
+import Button from '../components/Button.tsx';
 import { useSession } from '../hooks/useSession.tsx';
 import { supabase } from '../lib/supabaseClient.ts';
 
-const cardStyle: React.CSSProperties = {
-  background: 'var(--surface)',
-  borderRadius: '24px',
-  padding: '32px',
-  border: '1px solid rgba(255,255,255,0.08)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '12px'
-};
-
 type AuthMode = 'sign-up' | 'login';
+
+const featureList = [
+  {
+    title: 'Weekly visibility tracking',
+    body: 'See how often your brand appears across curated GPT prompts and how that shifts week over week.'
+  },
+  {
+    title: 'Competitor benchmarking',
+    body: 'Stack your share of voice against up to five rivals with side-by-side frequency and placement reads.'
+  },
+  {
+    title: 'Momentum alerts',
+    body: 'Automatic highlights when sentiment changes, gaps appear, or competitors surge into answers you own.'
+  },
+  {
+    title: 'Actionable guidance',
+    body: 'Playbooks that translate the data into next moves so teams know exactly where to focus content.'
+  }
+];
 
 const LandingPage = () => {
   const [email, setEmail] = useState('');
@@ -31,7 +41,7 @@ const LandingPage = () => {
     if (loading) return;
 
     if (session) {
-      navigate('/projects');
+      navigate('/dashboard');
       return;
     }
 
@@ -44,7 +54,7 @@ const LandingPage = () => {
         const { error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
-          options: { emailRedirectTo: window.location.origin + '/projects' }
+          options: { emailRedirectTo: window.location.origin + '/dashboard' }
         });
         if (signUpError) throw signUpError;
         setPlan('free');
@@ -58,7 +68,7 @@ const LandingPage = () => {
 
       setEmail('');
       setPassword('');
-      navigate('/projects');
+      navigate('/dashboard');
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : 'Unable to authenticate';
@@ -75,134 +85,105 @@ const LandingPage = () => {
 
   return (
     <Layout>
-      <section id="vision" style={{ padding: '72px 48px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '64px', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.2em', opacity: 0.6 }}>AI Visibility Tracking</div>
-          <h1 style={{ fontSize: '3.5rem', lineHeight: 1.05, margin: '16px 0 24px' }}>
-            Your weekly tracking dashboard for AI search visibility.
-          </h1>
-          <p style={{ fontSize: '18px', opacity: 0.72, maxWidth: '520px' }}>
-            RankAI continuously monitors how your brand appears in GPT answers, benchmarks you against competitors, and delivers actionable insights week after week.
-          </p>
-          <form id="auth-form" ref={formRef} onSubmit={handleSubmit} style={{ marginTop: '32px', display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@company.com"
-              required
-              autoComplete="email"
-              style={{
-                padding: '14px 18px',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.16)',
-                background: 'rgba(15,17,21,0.6)',
-                color: 'inherit'
-              }}
-            />
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="password (8+ characters)"
-              required
-              minLength={8}
-              autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-              style={{
-                padding: '14px 18px',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.16)',
-                background: 'rgba(15,17,21,0.6)',
-                color: 'inherit'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                padding: '14px 24px',
-                borderRadius: '999px',
-                border: 'none',
-                background: 'var(--accent)',
-                color: '#0b0d11',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                cursor: 'pointer',
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              {session ? 'Continue to dashboard' : mode === 'sign-up' ? 'Create account' : 'Sign in'}
-            </button>
-            <div style={{ display: 'flex', gap: '8px', fontSize: '14px', opacity: 0.7 }}>
-              <span>{mode === 'sign-up' ? 'Already have an account?' : 'New to RankAI?'}</span>
-              <button
-                type="button"
-                onClick={toggleMode}
-                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0 }}
-              >
-                {mode === 'sign-up' ? 'Sign in' : 'Create account'}
-              </button>
+      <section id="vision" className="page__section hero">
+        <div className="page__container hero__inner">
+          <div className="stack stack--loose">
+            <span className="public-badge">AI Visibility Tracking</span>
+            <h1 className="headline">Stay visible inside every AI answer.</h1>
+            <p className="subhead">
+              RankAI keeps score of how your brand shows up in GPT responses, spotlights the competitors overtaking you,
+              and nudges the moves that restore your share of voice.
+            </p>
+            <div className="chip-row">
+              <span className="chip">Share of voice snapshots</span>
+              <span className="chip">Weekly momentum trends</span>
+              <span className="chip">Actionable gap alerts</span>
             </div>
-            {error && <div style={{ color: 'var(--danger)', fontSize: '14px' }}>{error}</div>}
-          </form>
-        </div>
-        <div style={{ display: 'grid', gap: '16px' }}>
-          <div style={cardStyle}>
-            <span style={{ opacity: 0.6, fontSize: '12px', letterSpacing: '0.28em' }}>TRACKING DASHBOARD</span>
-            <strong style={{ fontSize: '32px' }}>Monitor AI visibility week after week.</strong>
-            <p style={{ opacity: 0.7 }}>Track trends, compare competitors, and discover gaps—all in one dashboard you&apos;ll check every Monday.</p>
           </div>
-          <div style={{ ...cardStyle, background: 'var(--surface-strong)' }}>
-            <span style={{ opacity: 0.6, fontSize: '12px', letterSpacing: '0.28em' }}>GET STARTED</span>
-            <strong style={{ fontSize: '28px' }}>Create an account to unlock your dashboard.</strong>
-            <p style={{ opacity: 0.7 }}>Free tier includes one analysis per month with limited competitor view.</p>
+          <div className="auth-panel">
+            <div className="stack stack--tight">
+              <span className="eyebrow">Start tracking</span>
+              <h2 className="headline-secondary">Launch your AI visibility console in minutes.</h2>
+            </div>
+            <form id="auth-form" ref={formRef} className="auth-panel__form" onSubmit={handleSubmit}>
+              <label className="field" htmlFor="email">
+                Email
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@company.com"
+                  required
+                  autoComplete="email"
+                  className="field__input"
+                />
+              </label>
+              <label className="field" htmlFor="password">
+                Password
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="8+ characters"
+                  required
+                  minLength={8}
+                  autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+                  className="field__input"
+                />
+              </label>
+              <Button type="submit" disabled={loading}>
+                {session ? 'Continue to dashboard' : mode === 'sign-up' ? 'Create free account' : 'Sign in'}
+              </Button>
+              <div className="auth-panel__switch">
+                <span>{mode === 'sign-up' ? 'Already have an account?' : 'New to RankAI?'}</span>
+                <button type="button" onClick={toggleMode} className="link-button">
+                  {mode === 'sign-up' ? 'Sign in' : 'Create account'}
+                </button>
+              </div>
+              {error && <div className="auth-panel__error">{error}</div>}
+            </form>
           </div>
         </div>
       </section>
 
-      <section id="features" style={{ padding: '48px 48px 96px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px' }}>
-        {[{
-          title: 'Weekly visibility tracking',
-          body: 'Automatically monitor how often your brand appears in GPT answers across ~20 industry queries.'
-        }, {
-          title: 'Competitor benchmarking',
-          body: 'Track up to five competitors side-by-side and see who dominates each conversation.'
-        }, {
-          title: 'Trends & weekly alerts',
-          body: 'Week-over-week deltas, trendline graphs, and Monday morning digest emails.'
-        }, {
-          title: 'Actionable insights, not reports',
-          body: 'Every card includes the next move—gap opportunities, content recommendations, and momentum signals.'
-        }].map((item) => (
-          <div key={item.title} style={cardStyle}>
-            <strong style={{ fontSize: '20px' }}>{item.title}</strong>
-            <p style={{ opacity: 0.75 }}>{item.body}</p>
+      <section id="features" className="page__section">
+        <div className="page__container stack">
+          <div className="stack stack--tight">
+            <span className="eyebrow">Designed for clarity</span>
+            <h2 className="headline-secondary">A modern dashboard that keeps leadership centered on outcomes.</h2>
           </div>
-        ))}
+          <div className="feature-grid">
+            {featureList.map((item) => (
+              <div key={item.title} className="feature-card">
+                <span className="feature-card__title">{item.title}</span>
+                <p className="feature-card__body">{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
-      <section id="pricing" style={{ padding: '48px 48px 96px', display: 'flex', justifyContent: 'center' }}>
-        <div style={{ ...cardStyle, maxWidth: '420px', textAlign: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: '24px' }}>Pro</h2>
-          <p style={{ fontSize: '48px', margin: '12px 0' }}>$89<span style={{ fontSize: '16px', opacity: 0.6 }}> / mo</span></p>
-          <p style={{ opacity: 0.72, marginBottom: '24px' }}>Weekly tracking, full competitor view, digest alerts.</p>
-          <button
-            type="button"
-            onClick={() => formRef.current?.requestSubmit()}
-            disabled={loading}
-            style={{
-              padding: '14px 24px',
-              borderRadius: '999px',
-              border: 'none',
-              background: 'var(--accent)',
-              color: '#0b0d11',
-              fontWeight: 600,
-              cursor: 'pointer',
-              opacity: loading ? 0.6 : 1
-            }}
-          >
-            {mode === 'sign-up' ? 'Create free account' : 'Sign in to upgrade'}
-          </button>
+      <section id="pricing" className="page__section">
+        <div className="page__container">
+          <div className="pricing-card">
+            <span className="eyebrow pricing-card__eyebrow">Pro plan</span>
+            <h3 className="pricing-card__title">Everything you need to stay ahead.</h3>
+            <p className="pricing-card__price">
+              $89<span className="pricing-card__period"> / month</span>
+            </p>
+            <p className="pricing-card__caption">
+              Weekly tracking, full competitor benchmarking, and automated momentum alerts shipped to your team.
+            </p>
+            <Button
+              type="button"
+              onClick={() => formRef.current?.requestSubmit()}
+              disabled={loading}
+            >
+              {mode === 'sign-up' ? 'Start free, upgrade anytime' : 'Sign in to upgrade'}
+            </Button>
+          </div>
         </div>
       </section>
     </Layout>

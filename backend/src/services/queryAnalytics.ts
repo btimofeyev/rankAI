@@ -1,4 +1,5 @@
 import { repository } from './repository.js';
+import { Citation } from '../types.js';
 
 export type QueryPerformance = {
   query: string;
@@ -16,8 +17,12 @@ export type QueryPerformance = {
   competitorData: Record<string, {
     appearances: number;
     avgPosition: number;
+    trendData?: number[];
   }>;
   isTracked: boolean;
+  citations?: Citation[];
+  usedWebSearch?: boolean;
+  trendData?: number[];
 };
 
 export const calculateQueryPerformance = async (
@@ -28,6 +33,12 @@ export const calculateQueryPerformance = async (
 ): Promise<QueryPerformance[]> => {
   // Get all query results for this project
   const runs = await repository.getProjectRuns(projectId);
+
+  // Sort runs chronologically for trend calculation
+  const sortedRuns = runs.sort((a, b) =>
+    new Date(a.runAt).getTime() - new Date(b.runAt).getTime()
+  );
+
   const allQueryResults: Record<string, any[]> = {};
 
   // Aggregate all results by query text
@@ -44,6 +55,7 @@ export const calculateQueryPerformance = async (
   // Calculate performance metrics for each query
   const performances: QueryPerformance[] = [];
 
+  // Process queries that have been analyzed
   for (const [queryText, results] of Object.entries(allQueryResults)) {
     const brandResults = results.filter(r => r.brand === brandName);
     const totalRuns = new Set(results.map(r => r.runId)).size;
@@ -70,8 +82,17 @@ export const calculateQueryPerformance = async (
       negative: brandResults.filter(r => r.sentiment === 'negative').length
     };
 
-    // Calculate competitor data
-    const competitorData: Record<string, { appearances: number; avgPosition: number }> = {};
+    // Calculate trend data for brand (last 10 runs)
+    const brandTrendData: number[] = [];
+    const last10Runs = sortedRuns.slice(-10); // Last 10 runs
+    for (const run of last10Runs) {
+      const runResults = results.filter(r => r.runId === run.id);
+      const brandInRun = runResults.some(r => r.brand === brandName);
+      brandTrendData.push(brandInRun ? 1 : 0);
+    }
+
+    // Calculate competitor data with trend
+    const competitorData: Record<string, { appearances: number; avgPosition: number; trendData?: number[] }> = {};
     for (const competitor of competitors) {
       const compResults = results.filter(r => r.brand === competitor);
       const compAppearances = new Set(compResults.map(r => r.runId)).size;
@@ -82,11 +103,24 @@ export const calculateQueryPerformance = async (
         ? compPositions.reduce((sum, pos) => sum + pos, 0) / compPositions.length
         : 0;
 
+      // Calculate trend data for competitor
+      const compTrendData: number[] = [];
+      for (const run of last10Runs) {
+        const runResults = results.filter(r => r.runId === run.id);
+        const compInRun = runResults.some(r => r.brand === competitor);
+        compTrendData.push(compInRun ? 1 : 0);
+      }
+
       competitorData[competitor] = {
         appearances: compAppearances,
-        avgPosition: compAvgPosition
+        avgPosition: compAvgPosition,
+        trendData: compTrendData
       };
     }
+
+    // Get citations (from first result that has them)
+    const citations = results.find(r => r.citations && r.citations.length > 0)?.citations || [];
+    const usedWebSearch = results.some(r => r.usedWebSearch);
 
     performances.push({
       query: queryText,
@@ -98,12 +132,48 @@ export const calculateQueryPerformance = async (
       worstPosition,
       sentiment,
       competitorData,
-      isTracked: trackedQueries.includes(queryText)
+      isTracked: trackedQueries.includes(queryText),
+      citations,
+      usedWebSearch,
+      trendData: brandTrendData
     });
   }
 
-  // Sort by brand appearances (descending), then by appearance rate
+  // Add tracked queries that haven't been analyzed yet
+  const analyzedQueries = new Set(Object.keys(allQueryResults));
+  const unanalyzedQueries = trackedQueries.filter(q => !analyzedQueries.has(q));
+
+  for (const queryText of unanalyzedQueries) {
+    performances.push({
+      query: queryText,
+      totalAppearances: 0,
+      brandAppearances: 0,
+      appearanceRate: 0,
+      avgPosition: 0,
+      bestPosition: 0,
+      worstPosition: 0,
+      sentiment: {
+        positive: 0,
+        neutral: 0,
+        negative: 0
+      },
+      competitorData: {},
+      isTracked: true,
+      citations: [],
+      usedWebSearch: false
+    });
+  }
+
+  // Sort: analyzed queries first (by performance), then unanalyzed
   return performances.sort((a, b) => {
+    // Unanalyzed queries go to the end
+    if (a.brandAppearances === 0 && b.brandAppearances === 0) {
+      return 0; // Keep original order for unanalyzed
+    }
+    if (a.brandAppearances === 0) return 1;
+    if (b.brandAppearances === 0) return -1;
+
+    // Sort analyzed queries by performance
     if (b.brandAppearances !== a.brandAppearances) {
       return b.brandAppearances - a.brandAppearances;
     }

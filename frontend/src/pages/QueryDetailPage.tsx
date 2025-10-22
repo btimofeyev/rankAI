@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../hooks/useSession.tsx';
-import Layout from '../components/Layout.tsx';
+import AppShell from '../components/AppShell.tsx';
+import Button from '../components/Button.tsx';
+import CitationsDisplay from '../components/CitationsDisplay.tsx';
+import { IconFolder } from '../components/icons.tsx';
+import { Citation } from '../types/api.ts';
 import axios from 'axios';
 
 type QueryDetail = {
@@ -15,6 +19,8 @@ type QueryDetail = {
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   context: string | null;
   responseText?: string;
+  citations?: Citation[];
+  usedWebSearch?: boolean;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:4000/api';
@@ -28,7 +34,7 @@ const fetchProjectQueries = async (token: string, projectId: string): Promise<Qu
 
 const QueryDetailPage = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const { session, signOut } = useSession();
+  const { session, signOut, plan } = useSession();
   const navigate = useNavigate();
   const token = session?.access_token ?? null;
 
@@ -44,6 +50,11 @@ const QueryDetailPage = () => {
   });
 
   const queries = queriesQuery.data ?? [];
+  const rawFullName = session?.user?.user_metadata?.full_name as string | undefined;
+  const displayName = rawFullName && rawFullName.trim().length > 0
+    ? rawFullName.trim()
+    : session?.user?.email?.split('@')[0] ?? 'Your workspace';
+  const userEmail = session?.user?.email ?? undefined;
 
   // Get unique brands for filter
   const brands = Array.from(new Set(queries.map(q => q.brand).filter(Boolean))) as string[];
@@ -62,6 +73,21 @@ const QueryDetailPage = () => {
     acc[query.queryText].push(query);
     return acc;
   }, {});
+
+  // Get citations for a query group (take from first result that has citations)
+  const getQueryCitations = (mentions: QueryDetail[]): Citation[] => {
+    for (const mention of mentions) {
+      if (mention.citations && mention.citations.length > 0) {
+        return mention.citations;
+      }
+    }
+    return [];
+  };
+
+  // Check if any mention in the group used web search
+  const usedWebSearch = (mentions: QueryDetail[]): boolean => {
+    return mentions.some(m => m.usedWebSearch);
+  };
 
   const getSentimentColor = (sentiment: string | null) => {
     if (sentiment === 'positive') return 'var(--success)';
@@ -88,48 +114,48 @@ const QueryDetailPage = () => {
     );
   };
 
+  const navItems = [
+    { label: 'Dashboard', to: '/dashboard', icon: <IconFolder /> }
+  ];
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
   if (queriesQuery.isLoading) {
     return (
-      <Layout>
-        <div style={{ padding: '48px', textAlign: 'center', opacity: 0.6 }}>
-          Loading query data...
-        </div>
-      </Layout>
+      <AppShell
+        planTier={plan}
+        navItems={navItems}
+        onSignOut={handleSignOut}
+        footerNote="Detailed visibility for every prompt."
+        user={{ name: displayName, email: userEmail }}
+      >
+        <div className="empty-state">Loading query data...</div>
+      </AppShell>
     );
   }
 
   return (
-    <Layout>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 48px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <button
-            onClick={() => navigate(`/projects/${projectId}`)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '8px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'transparent',
-              color: 'inherit',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            ← Dashboard
-          </button>
-          <span style={{ fontWeight: 600, fontSize: '18px' }}>Query Details</span>
+    <AppShell
+      planTier={plan}
+      navItems={navItems}
+      onSignOut={handleSignOut}
+      footerNote="Detailed visibility for every prompt."
+      user={{ name: displayName, email: userEmail }}
+    >
+      <div className="stack stack--loose">
+        <div className="panel panel--muted">
+          <div className="stack stack--tight">
+            <Button type="button" variant="ghost" onClick={() => navigate(`/dashboard/${projectId ?? ''}`)}>
+              ← Dashboard
+            </Button>
+            <h1 className="headline-secondary">Query details</h1>
+          </div>
         </div>
-        <button
-          onClick={async () => {
-            await signOut();
-            navigate('/');
-          }}
-          style={{ padding: '10px 16px', borderRadius: '999px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}
-        >
-          Log out
-        </button>
-      </header>
 
-      <div style={{ padding: '32px 48px' }}>
+        <div style={{ padding: '32px 48px' }}>
         {/* Filters */}
         <div style={{
           display: 'flex',
@@ -221,10 +247,27 @@ const QueryDetailPage = () => {
                     onMouseLeave={(e) => e.currentTarget.style.background = expandedRow === queryText ? 'rgba(255,255,255,0.04)' : 'transparent'}
                   >
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '15px', fontWeight: 500, marginBottom: '8px' }}>{queryText}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                        <div style={{ fontSize: '15px', fontWeight: 500 }}>{queryText}</div>
+                        {usedWebSearch(mentions) && (
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(91, 140, 254, 0.15)',
+                            color: 'var(--accent)',
+                            fontSize: '10px',
+                            fontWeight: 600
+                          }}>
+                            🌐 WEB
+                          </span>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', gap: '16px', fontSize: '13px', opacity: 0.7 }}>
                         <span>{mentions.length} mention{mentions.length !== 1 ? 's' : ''}</span>
                         <span>{new Set(mentions.map(m => m.brand)).size} brand{new Set(mentions.map(m => m.brand)).size !== 1 ? 's' : ''}</span>
+                        {getQueryCitations(mentions).length > 0 && (
+                          <span>{getQueryCitations(mentions).length} source{getQueryCitations(mentions).length !== 1 ? 's' : ''}</span>
+                        )}
                       </div>
                     </div>
                     <span style={{ fontSize: '20px', transform: expandedRow === queryText ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
@@ -232,6 +275,20 @@ const QueryDetailPage = () => {
 
                   {expandedRow === queryText && (
                     <div style={{ padding: '0 24px 20px' }}>
+                      {/* Show citations first if available */}
+                      {getQueryCitations(mentions).length > 0 && (
+                        <div style={{
+                          padding: '16px',
+                          marginBottom: '16px',
+                          borderRadius: '12px',
+                          background: 'rgba(91, 140, 254, 0.05)',
+                          border: '1px solid rgba(91, 140, 254, 0.15)'
+                        }}>
+                          <CitationsDisplay citations={getQueryCitations(mentions)} />
+                        </div>
+                      )}
+
+                      {/* Brand mentions */}
                       {mentions.filter(m => m.brand).map((mention, idx) => (
                         <div
                           key={`${mention.id}-${idx}`}
@@ -288,8 +345,9 @@ const QueryDetailPage = () => {
         <div style={{ marginTop: '24px', textAlign: 'center', opacity: 0.6, fontSize: '14px' }}>
           Showing {Object.keys(groupedQueries).length} unique queries with {filteredQueries.length} total mentions
         </div>
+        </div>
       </div>
-    </Layout>
+    </AppShell>
   );
 };
 

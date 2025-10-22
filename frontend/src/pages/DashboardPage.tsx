@@ -1,26 +1,60 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MetricCard from '../components/MetricCard.tsx';
-import TrendChart from '../components/TrendChart.tsx';
-import ShareOfVoiceList from '../components/ShareOfVoiceList.tsx';
-import GapList from '../components/GapList.tsx';
-import ActionList from '../components/ActionList.tsx';
-import PlanBadge from '../components/PlanBadge.tsx';
-import { useDashboard } from '../hooks/useDashboard.ts';
+import { useQuery } from '@tanstack/react-query';
+import AppShell from '../components/AppShell.tsx';
+import Button from '../components/Button.tsx';
+import Card from '../components/Card.tsx';
+import DashboardGrid from '../components/DashboardGrid.tsx';
+import TopActionBar from '../components/TopActionBar.tsx';
+import { fetchPlan, fetchProjects } from '../api/index.ts';
 import { useSession } from '../hooks/useSession.tsx';
-import { createCheckout } from '../api/index.ts';
+import { PRIMARY_NAV, SUPPORT_NAV } from '../lib/navigation.tsx';
+import type { Project } from '../types/api.ts';
+
+type ProjectCard = {
+  id: string;
+  brandName: string;
+  trackedCount: number;
+  trackedLabel: string;
+  competitorsLabel: string;
+  keywordChips: string[];
+  hasMoreKeywords: boolean;
+  updatedLabel: string;
+};
+
+const formatTimestampLabel = (value: string | undefined) => {
+  if (!value) return 'Updated recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Updated recently';
+  return `Updated ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+};
+
+const sortProjects = (projects: Project[]): Project[] => {
+  return [...projects].sort((a, b) => {
+    const aTime = new Date(a.updatedAt ?? a.createdAt).getTime();
+    const bTime = new Date(b.updatedAt ?? b.createdAt).getTime();
+    const safeATime = Number.isFinite(aTime) ? aTime : 0;
+    const safeBTime = Number.isFinite(bTime) ? bTime : 0;
+    return safeBTime - safeATime;
+  });
+};
 
 const DashboardPage = () => {
   const { session, plan, setPlan, signOut } = useSession();
   const navigate = useNavigate();
   const token = session?.access_token ?? null;
-  const { dashboardQuery, planQuery, analysisMutation } = useDashboard(token);
-  const [brand, setBrand] = useState('Klio AI');
-  const [keywords, setKeywords] = useState('AI tutor, education');
-  const [competitors, setCompetitors] = useState('TutorPlus, MindCoach');
-  const [error, setError] = useState('');
-  const [upgradeError, setUpgradeError] = useState('');
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
+
+  const planQuery = useQuery({
+    queryKey: ['plan', token ?? 'guest'],
+    queryFn: () => fetchPlan(token ?? ''),
+    enabled: Boolean(token)
+  });
+
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => fetchProjects(token ?? ''),
+    enabled: Boolean(token)
+  });
 
   useEffect(() => {
     if (planQuery.data?.tier && planQuery.data.tier !== plan) {
@@ -29,202 +63,201 @@ const DashboardPage = () => {
   }, [planQuery.data?.tier, plan, setPlan]);
 
   const planTier = planQuery.data?.tier ?? plan;
-  const dashboard = dashboardQuery.data?.dashboard ?? null;
-  const analysis = dashboardQuery.data?.analysis ?? null;
-  const loading = dashboardQuery.isLoading || planQuery.isLoading;
+  const projects = projectsQuery.data?.projects ?? [];
+  const sortedProjects = useMemo(() => sortProjects(projects), [projects]);
 
-  const readableDate = useMemo(() => {
-    if (!analysis) return 'No runs yet';
-    return new Date(analysis.createdAt).toLocaleString();
-  }, [analysis]);
-
-  const sentimentEntries = useMemo(() => {
-    if (!dashboard) return [] as Array<{ label: string; value: number; pct: number; tone: 'positive' | 'neutral' | 'negative' }>;
-    const { positive, neutral, negative } = dashboard.sentimentCard;
-    const total = positive + neutral + negative;
-    if (total === 0) return [];
-    return [
-      { label: 'Positive', value: positive, pct: Math.round((positive / total) * 100), tone: 'positive' as const },
-      { label: 'Neutral', value: neutral, pct: Math.round((neutral / total) * 100), tone: 'neutral' as const },
-      { label: 'Negative', value: negative, pct: Math.round((negative / total) * 100), tone: 'negative' as const }
-    ];
-  }, [dashboard]);
-
-  const brandName = analysis?.brand ?? brand;
-  const wowDelta = dashboard?.trendCard.delta ?? 0;
-  const brandShare = dashboard ? dashboard.summaryCard.shareOfVoice[brandName] ?? 0 : 0;
-  const totalQueries = dashboard?.summaryCard.totalQueries ?? 0;
-  const brandMentions = dashboard?.summaryCard.brandMentions ?? 0;
-  const coverageHeadline = dashboard ? (totalQueries > 0 ? `${brandMentions}/${totalQueries}` : '—') : '—';
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!token) return;
-    const payload = {
-      brand: brand.trim(),
-      keywords: keywords.split(',').map((value) => value.trim()).filter(Boolean),
-      competitors: competitors.split(',').map((value) => value.trim()).filter(Boolean)
-    };
-    setError('');
-    analysisMutation.mutate(payload, {
-      onError: (mutError) => {
-        setError(mutError.message || 'Unable to run analysis');
-      }
+  const projectCards: ProjectCard[] = useMemo(() => {
+    return sortedProjects.map((project) => {
+      const trackedCount = project.trackedQueries.length;
+      const trackedLabel = `${trackedCount} prompt${trackedCount === 1 ? '' : 's'}`;
+      const competitorCount = project.competitors.length;
+      const competitorsLabel = competitorCount === 0
+        ? 'No competitors yet'
+        : `${competitorCount} competitor${competitorCount === 1 ? '' : 's'}`;
+      const keywordChips = project.keywords.slice(0, 3);
+      return {
+        id: project.id,
+        brandName: project.brandName,
+        trackedCount,
+        trackedLabel,
+        competitorsLabel,
+        keywordChips,
+        hasMoreKeywords: project.keywords.length > keywordChips.length,
+        updatedLabel: formatTimestampLabel(project.updatedAt ?? project.createdAt)
+      };
     });
+  }, [sortedProjects]);
+
+  const loading = planQuery.isLoading || projectsQuery.isLoading;
+
+  const planErrorMessage = planQuery.isError
+    ? (planQuery.error instanceof Error ? planQuery.error.message : 'Unable to load plan details')
+    : null;
+  const projectsErrorMessage = projectsQuery.isError
+    ? (projectsQuery.error instanceof Error ? projectsQuery.error.message : 'Unable to load projects')
+    : null;
+
+  const alerts = [planErrorMessage, projectsErrorMessage].filter(Boolean) as string[];
+
+  const userEmail = session?.user?.email ?? undefined;
+  const userFullName = session?.user?.user_metadata?.full_name as string | undefined;
+  const displayName = userFullName && userFullName.trim().length > 0
+    ? userFullName.trim()
+    : userEmail?.split('@')[0] ?? 'RankAI Operator';
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
   };
 
-  const handleUpgrade = async () => {
-    if (!token) return;
-    setUpgradeError('');
-    setUpgradeLoading(true);
-    try {
-      const checkout = await createCheckout(token);
-      window.location.href = checkout.url;
-    } catch (err) {
-      setUpgradeError((err as Error).message || 'Unable to start checkout');
-    } finally {
-      setUpgradeLoading(false);
-    }
+  const handleOpenProject = (projectId: string) => {
+    navigate(`/projects/${projectId}`);
   };
+
+  const handleManageProjects = () => {
+    navigate('/projects');
+  };
+
+  const handleQuickLaunch = () => {
+    if (projectCards.length === 0) return;
+    handleOpenProject(projectCards[0].id);
+  };
+
+  const showQuickLaunch = projectCards.length > 0;
 
   return (
-    <div className="dashboard">
-      <header className="dashboard__topbar">
-        <div className="dashboard__brand">
-          <span className="dashboard__logo">RankAI</span>
-          <PlanBadge tier={planTier} />
-        </div>
-        <div className="dashboard__actions">
-          <button
-            type="button"
-            className="dashboard-button dashboard-button--ghost"
-            onClick={async () => {
-              await signOut();
-              navigate('/');
-            }}
-          >
-            Log out
-          </button>
-        </div>
-      </header>
+    <AppShell
+      planTier={planTier}
+      navItems={PRIMARY_NAV}
+      secondaryNavItems={SUPPORT_NAV}
+      user={{ name: displayName, email: userEmail }}
+      onSignOut={handleSignOut}
+      footerNote="Choose a workspace to explore your AI search coverage."
+    >
+      <div className="project-hub" data-loading={loading}>
+        <header className="project-hub__header">
+          <div className="project-hub__intro">
+            <span className="project-hub__eyebrow">Projects</span>
+            <h1 className="project-hub__title">
+              {projectCards.length > 0 ? 'Open a workspace' : 'Create your first workspace'}
+            </h1>
+            <p className="project-hub__subtitle">
+              Pick a project to check sentiment, share of voice, and momentum insights for your brand.
+            </p>
+          </div>
+          <div className="project-hub__actions">
+            {showQuickLaunch && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleQuickLaunch}
+              >
+                Quick launch latest
+              </Button>
+            )}
+            <Button type="button" onClick={handleManageProjects}>
+              Manage projects
+            </Button>
+          </div>
+        </header>
 
-      <main className="dashboard__content">
-        <div className="dashboard__column dashboard__column--primary">
-          <MetricCard
-            title="Visibility Console"
-            subtitle={`Last updated ${readableDate}`}
-            className="panel--hero"
-          >
-            <div className="dashboard-summary">
-              <div className="dashboard-summary__intro">
-                <span className="dashboard-summary__tagline">AI Search footprint</span>
-                <h1 className="dashboard-summary__title">{brandName}</h1>
+        {alerts.length > 0 && (
+          <div className="project-hub__alerts">
+            {alerts.map((alert) => (
+              <div key={alert} className="modern-alert">
+                {alert}
               </div>
-              <div className="dashboard-summary__headline">{coverageHeadline}</div>
-              <div className="dashboard-summary__metrics">
-                <div className="dashboard-metric">
-                  <span className="dashboard-metric__label">Share of voice</span>
-                  <span className="dashboard-metric__value">{brandShare}%</span>
-                </div>
-                <div className="dashboard-metric">
-                  <span className="dashboard-metric__label">WoW delta</span>
-                  <span className="dashboard-metric__value">{wowDelta >= 0 ? '+' : ''}{wowDelta}</span>
-                </div>
-                <div className="dashboard-metric">
-                  <span className="dashboard-metric__label">Queries tracked</span>
-                  <span className="dashboard-metric__value">{totalQueries}</span>
-                </div>
-                {sentimentEntries.length > 0 && (
-                  <div className="dashboard-metric">
-                    <span className="dashboard-metric__label">Positive mentions</span>
-                    <span className="dashboard-metric__value">{sentimentEntries[0]?.value ?? 0}</span>
-                  </div>
-                )}
-              </div>
-              <form className="dashboard-form dashboard-form--inline" onSubmit={handleSubmit}>
-                <label>
-                  Brand
-                  <input
-                    value={brand}
-                    onChange={(event) => setBrand(event.target.value)}
-                    className="dashboard-form__input"
-                    placeholder="e.g., Stripe"
-                  />
-                </label>
-                <label>
-                  Keywords
-                  <input
-                    value={keywords}
-                    onChange={(event) => setKeywords(event.target.value)}
-                    className="dashboard-form__input"
-                    placeholder="Payments, fintech"
-                  />
-                </label>
-                <label>
-                  Competitors
-                  <input
-                    value={competitors}
-                    onChange={(event) => setCompetitors(event.target.value)}
-                    className="dashboard-form__input"
-                    placeholder="PayPal, Square"
-                  />
-                </label>
-                <div className="dashboard-form__actions">
-                  <button
-                    type="submit"
-                    disabled={analysisMutation.isLoading}
-                    className="dashboard-button dashboard-button--primary"
-                  >
-                    {analysisMutation.isLoading ? 'Running…' : 'Run analysis'}
-                  </button>
-                  <span className="dashboard-note">Last run: {readableDate}</span>
-                  {error && <span style={{ color: '#dc2626', fontSize: '0.78rem' }}>{error}</span>}
-                </div>
-              </form>
+            ))}
+          </div>
+        )}
+
+        {loading ? (
+          <Card variant="ghost" className="project-hub__loading">
+            <div className="project-hub__loading-content">
+              <div className="project-hub__loading-spinner" />
+              <span>Loading your projects…</span>
             </div>
-          </MetricCard>
-
-          <MetricCard title="Share of Voice" subtitle="Presence across monitored queries">
-            {dashboard ? <ShareOfVoiceList share={dashboard.summaryCard.shareOfVoice} /> : <div className="empty-state">Share of voice will appear after your first run.</div>}
-          </MetricCard>
-        </div>
-
-        <div className="dashboard__column dashboard__column--secondary">
-          {loading ? (
-            <div className="dashboard__loading">Loading dashboard…</div>
-          ) : (
-            <>
-              <MetricCard title="Momentum" subtitle="Last 10 refreshes">
-                {dashboard ? <TrendChart points={dashboard.trendCard.series} /> : <div className="empty-state">Trend data will populate after you record runs.</div>}
-              </MetricCard>
-
-              <MetricCard title="Opportunity Map" subtitle="Where competitors lead">
-                {dashboard ? <GapList gaps={dashboard.gapCard} /> : <div className="empty-state">We surface query gaps once data is collected.</div>}
-              </MetricCard>
-
-              <MetricCard title="Next Moves" subtitle="Actions to lift share of voice">
-                {dashboard ? <ActionList actions={dashboard.actionCard} /> : <div className="empty-state">Your prioritized actions will appear after your first run.</div>}
-                {planTier === 'free' ? (
-                  <div className="plan-upgrade__foot">
-                    <button
-                      type="button"
-                      onClick={handleUpgrade}
-                      disabled={upgradeLoading}
-                      className="dashboard-button dashboard-button--subtle"
-                    >
-                      {upgradeLoading ? 'Connecting…' : 'Upgrade to Pro'}
-                    </button>
-                    {upgradeError && <span style={{ color: '#dc2626', fontSize: '0.75rem' }}>{upgradeError}</span>}
+          </Card>
+        ) : projectCards.length === 0 ? (
+          <Card variant="ghost" className="project-hub__empty">
+            <div className="project-hub__empty-content">
+              <div className="project-hub__empty-icon">🚀</div>
+              <h3 className="project-hub__empty-title">No projects yet</h3>
+              <p className="project-hub__empty-description">
+                Create your first workspace to start tracking brand visibility in AI search results.
+              </p>
+              <Button type="button" onClick={handleManageProjects}>
+                Create first project
+              </Button>
+            </div>
+          </Card>
+        ) : (
+          <DashboardGrid columns={2} gap="md" className="project-hub__grid">
+            {projectCards.map((project) => (
+              <Card
+                key={project.id}
+                hoverable
+                className="project-card"
+                header={
+                  <div className="project-card__header">
+                    <div className="project-card__header-content">
+                      <span className="project-card__badge">Workspace</span>
+                      <h3 className="project-card__title">{project.brandName}</h3>
+                    </div>
+                    <span className="project-card__timestamp">{project.updatedLabel}</span>
                   </div>
-                ) : (
-                  <span className="plan-upgrade__perk">Pro keeps this console synced with weekly auto-refresh.</span>
-                )}
-              </MetricCard>
-            </>
-          )}
-        </div>
-      </main>
-    </div>
+                }
+                content={
+                  <div className="project-card__content">
+                    <div className="project-card__metrics">
+                      <div className="project-card__metric">
+                        <span className="project-card__metric-value">{project.trackedLabel}</span>
+                        <span className="project-card__metric-label">Tracked prompts</span>
+                      </div>
+                      <div className="project-card__metric">
+                        <span className="project-card__metric-value">{project.competitorsLabel}</span>
+                        <span className="project-card__metric-label">Competitors</span>
+                      </div>
+                    </div>
+
+                    <div className="project-card__keywords" aria-label="Tracked keywords">
+                      {project.keywordChips.length > 0 ? (
+                        <div className="project-card__keyword-list">
+                          {project.keywordChips.map((keyword) => (
+                            <span key={keyword} className="project-card__keyword">{keyword}</span>
+                          ))}
+                          {project.hasMoreKeywords && (
+                            <span className="project-card__keyword project-card__keyword--muted">+{project.keywordChips.length > 5 ? project.keywordChips.length - 5 : 0} more</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="project-card__keywords-empty">No keywords configured</span>
+                      )}
+                    </div>
+                  </div>
+                }
+                actions={[
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenProject(project.id)}
+                  >
+                    View dashboard
+                  </Button>,
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    onClick={handleManageProjects}
+                  >
+                    Manage
+                  </Button>
+                ]}
+              />
+            ))}
+          </DashboardGrid>
+        )}
+      </div>
+    </AppShell>
   );
 };
 

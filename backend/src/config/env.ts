@@ -14,6 +14,9 @@ export const env = {
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   openaiApiKey: process.env.OPENAI_API_KEY,
+  openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+  useWebSearch: process.env.USE_WEB_SEARCH === 'true',
+  webSearchMode: (process.env.WEB_SEARCH_MODE ?? 'responses') as 'responses' | 'chat_completions',
   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173'
 };
